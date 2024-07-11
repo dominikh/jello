@@ -1,9 +1,9 @@
 package wgpu_engine
 
-type CPUBinding interface {
+type cpuBinding interface {
 	// One of CPUBuffer, CPUBufferRW, CPUTexture
 }
 
-type CPUBuffer []byte
-type CPUBufferRW []byte
-type CPUTexture struct{}
+type cpuBuffer []byte
+type cpuBufferRW []byte
+type cpuTexture struct{}

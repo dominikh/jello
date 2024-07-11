@@ -194,7 +194,7 @@ func (eng *Engine) RenderToTexture(
 	texture *wgpu.TextureView,
 	params *renderer.RenderParams,
 ) {
-	recording, target := renderer.RenderFull(enc, eng.resolver, eng.shaders, params)
+	recording, target := renderer.RenderFull(enc, eng.resolver, eng.fullShaders, params)
 	externalResources := []ExternalResource{
 		ExternalImage{
 			Proxy: target.(renderer.ImageProxy),
