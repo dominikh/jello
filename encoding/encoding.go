@@ -83,11 +83,11 @@ func (enc *Encoding) StreamOffsets() StreamOffsets {
 }
 
 func (enc *Encoding) EncodeFillStyle(fill brush.Fill) {
-	enc.EncodeStyle(StyleFromFill(fill))
+	enc.EncodeStyle(styleFromFill(fill))
 }
 
 func (enc *Encoding) EncodeStrokeStyle(stroke curve.Stroke) {
-	enc.EncodeStyle(StyleFromStroke(stroke))
+	enc.EncodeStyle(styleFromStroke(stroke))
 }
 
 func (enc *Encoding) EncodeStyle(style Style) {
@@ -109,8 +109,8 @@ func (enc *Encoding) EncodeTransform(transform jmath.Transform) bool {
 	}
 }
 
-func (enc *Encoding) EncodePath(isFill bool) *PathEncoder {
-	return &PathEncoder{
+func (enc *Encoding) EncodePath(isFill bool) *pathEncoder {
+	return &pathEncoder{
 		tags:        &enc.PathTags,
 		data:        &enc.PathData,
 		numSegments: &enc.NumPathSegments,
@@ -134,7 +134,7 @@ func (enc *Encoding) EncodeBrush(b brush.Brush, alpha float32) {
 		} else {
 			color = b.Color.WithAlphaFactor(alpha)
 		}
-		enc.EncodeColor(DrawColor{RGBA: color.PremulUint32()})
+		enc.EncodeColor(drawColor{RGBA: color.PremulUint32()})
 	case brush.GradientBrush:
 		panic("unsupported")
 	case brush.ImageBrush:
@@ -142,7 +142,7 @@ func (enc *Encoding) EncodeBrush(b brush.Brush, alpha float32) {
 	}
 }
 
-func (enc *Encoding) EncodeColor(color DrawColor) {
+func (enc *Encoding) EncodeColor(color drawColor) {
 	enc.DrawTags = append(enc.DrawTags, DrawTagColor)
 	enc.DrawData = binary.LittleEndian.AppendUint32(enc.DrawData, color.RGBA)
 }

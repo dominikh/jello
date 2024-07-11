@@ -34,7 +34,7 @@ func (tag DrawTag) InfoSize() uint32 {
 	return uint32((tag >> 6) & 0xf)
 }
 
-type DrawColor struct {
+type drawColor struct {
 	_ structs.HostLayout
 
 	RGBA uint32
