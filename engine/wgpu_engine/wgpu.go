@@ -393,6 +393,7 @@ func (eng *Engine) RunRecording(
 					s.bindGroupLayout,
 					bindings,
 				)
+				defer bindGroup.Release()
 
 				cpass := encoder.BeginComputePass(nil)
 				defer cpass.Release()
@@ -426,6 +427,7 @@ func (eng *Engine) RunRecording(
 					s.bindGroupLayout,
 					bindings,
 				)
+				defer bindGroup.Release()
 
 				transientMap.materializeGPUBufForIndirect(
 					&eng.bindMap,

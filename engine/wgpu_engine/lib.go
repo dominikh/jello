@@ -215,22 +215,16 @@ func (eng *Engine) RenderToSurface(
 	if eng.target == nil {
 		eng.target = newTargetTexture(eng.Device, width, height)
 	} else if eng.target.Width != width || eng.target.Height != height {
+		eng.target.View.Release()
 		eng.target = newTargetTexture(eng.Device, width, height)
 	}
+
 	eng.RenderToTexture(queue, enc, eng.target.View, params)
+
 	encoder := eng.Device.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "blitter"})
 	defer encoder.Release()
 
 	surfaceView := surface.Texture.CreateView(nil)
-	// surfaceView := surface.Texture.CreateView(&wgpu.TextureViewDescriptor{
-	// 	Format:          surface.Texture.Format(),
-	// 	Dimension:       wgpu.TextureViewDimension2D,
-	// 	BaseMipLevel:    0,
-	// 	MipLevelCount:   1,
-	// 	BaseArrayLayer:  0,
-	// 	ArrayLayerCount: 1,
-	// 	Aspect:          wgpu.TextureAspectAll,
-	// })
 	defer surfaceView.Release()
 
 	bindGroup := eng.Device.CreateBindGroup(&wgpu.BindGroupDescriptor{
