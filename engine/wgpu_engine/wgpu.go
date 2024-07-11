@@ -82,12 +82,14 @@ type bindMapBuffer struct {
 	Label  string
 }
 
+type bindMapImage struct {
+	texture *wgpu.Texture
+	view    *wgpu.TextureView
+}
+
 type bindMap struct {
-	bufMap   map[renderer.ResourceID]*bindMapBuffer
-	imageMap map[renderer.ResourceID]struct {
-		texture *wgpu.Texture
-		view    *wgpu.TextureView
-	}
+	bufMap        map[renderer.ResourceID]*bindMapBuffer
+	imageMap      map[renderer.ResourceID]*bindMapImage
 	pendingClears map[renderer.ResourceID]struct{}
 }
 
@@ -116,11 +118,8 @@ func New(dev *wgpu.Device, options *RendererOptions) *Engine {
 			bufs: make(map[bufferProperties][]*wgpu.Buffer),
 		},
 		bindMap: bindMap{
-			bufMap: make(map[renderer.ResourceID]*bindMapBuffer),
-			imageMap: make(map[renderer.ResourceID]struct {
-				texture *wgpu.Texture
-				view    *wgpu.TextureView
-			}),
+			bufMap:        make(map[renderer.ResourceID]*bindMapBuffer),
+			imageMap:      make(map[renderer.ResourceID]*bindMapImage),
 			pendingClears: make(map[renderer.ResourceID]struct{})},
 		downloads: make(map[renderer.ResourceID]*wgpu.Buffer),
 		UseCPU:    options.UseCPU,
@@ -602,12 +601,7 @@ func (m *bindMap) materializeCPUBuf(proxy renderer.BufferProxy) {
 }
 
 func (m *bindMap) insertImage(id renderer.ResourceID, image *wgpu.Texture, imageView *wgpu.TextureView) {
-	m.imageMap[id] = struct {
-		texture *wgpu.Texture
-		view    *wgpu.TextureView
-	}{
-		image, imageView,
-	}
+	m.imageMap[id] = &bindMapImage{image, imageView}
 }
 
 func (m *bindMap) getBuf(proxy renderer.BufferProxy) (*bindMapBuffer, bool) {
@@ -645,10 +639,7 @@ func (m *bindMap) getOrCreateImage(
 		ArrayLayerCount: ^uint32(0),
 		Format:          imageFormatToWGPU(proxy.Format),
 	})
-	m.imageMap[proxy.ID] = struct {
-		texture *wgpu.Texture
-		view    *wgpu.TextureView
-	}{
+	m.imageMap[proxy.ID] = &bindMapImage{
 		texture, textureView,
 	}
 
@@ -807,10 +798,7 @@ func (m *transientBindMap) createBindGroup(
 				ArrayLayerCount: ^uint32(0),
 				Format:          imageFormatToWGPU(proxy.Format),
 			})
-			bindMap.imageMap[proxy.ID] = struct {
-				texture *wgpu.Texture
-				view    *wgpu.TextureView
-			}{
+			bindMap.imageMap[proxy.ID] = &bindMapImage{
 				texture, textureView,
 			}
 		default:
