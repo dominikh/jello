@@ -1,4 +1,4 @@
-package jello
+package encoding
 
 import (
 	"encoding/binary"
@@ -8,6 +8,7 @@ import (
 
 	"honnef.co/go/brush"
 	"honnef.co/go/curve"
+	"honnef.co/go/jello/jmath"
 )
 
 type Style struct {
@@ -93,7 +94,7 @@ func StyleFromStroke(stroke curve.Stroke) Style {
 	case curve.RoundCap:
 		endCap = flagsEndCapBitsRound
 	}
-	miterLimit := uint32(float16(float32(stroke.MiterLimit)))
+	miterLimit := uint32(jmath.Float16(float32(stroke.MiterLimit)))
 	return Style{
 		FlagsAndMiterLimits: style | join | startCap | endCap | miterLimit,
 		LineWidth:           float32(stroke.Width),
@@ -161,21 +162,6 @@ func (tag PathTag) IsSubpathEnd() bool  { return tag&PathTagSubpathEndBit != 0 }
 func (tag *PathTag) SetSubpathEnd()     { *tag |= PathTagSubpathEndBit }
 func (tag PathTag) PathSegmentType() PathSegmentType {
 	return PathSegmentType(tag & PathTagSegmentMask)
-}
-
-type PathMonoid struct {
-	_ structs.HostLayout
-
-	/// Index into transform stream.
-	TransIdx uint32
-	/// Path segment index.
-	PathSegIdx uint32
-	/// Offset into path segment stream.
-	PathSegOffset uint32
-	/// Index into style stream.
-	StyleIdx uint32
-	/// Index of containing path.
-	PathIdx uint32
 }
 
 type PathEncoder struct {
@@ -249,7 +235,7 @@ func (enc *PathEncoder) isZeroLengthSegment(p1 [2]float32, p2_, p3_ *[2]float32)
 	yMin := min(p0[1], p1[1], p2[1], p3[1])
 	yMax := max(p0[1], p1[1], p2[1], p3[1])
 
-	return !(xMax-xMin > epsilon || yMax-yMin > epsilon)
+	return !(xMax-xMin > jmath.Epsilon || yMax-yMin > jmath.Epsilon)
 }
 
 func (enc *PathEncoder) startTangentForCurve(p1 [2]float32, p2_, p3_ *[2]float32) ([2]float32, bool) {
@@ -263,11 +249,11 @@ func (enc *PathEncoder) startTangentForCurve(p1 [2]float32, p2_, p3_ *[2]float32
 		p3 = *p3_
 	}
 
-	if abs32(p1[0]-p0[0]) > epsilon || abs32(p1[1]-p0[1]) > epsilon {
+	if jmath.Abs32(p1[0]-p0[0]) > jmath.Epsilon || jmath.Abs32(p1[1]-p0[1]) > jmath.Epsilon {
 		return p1, true
-	} else if abs32(p2[0]-p0[0]) > epsilon || abs32(p2[1]-p0[1]) > epsilon {
+	} else if jmath.Abs32(p2[0]-p0[0]) > jmath.Epsilon || jmath.Abs32(p2[1]-p0[1]) > jmath.Epsilon {
 		return p2, true
-	} else if abs32(p3[0]-p0[0]) > epsilon || abs32(p3[1]-p0[1]) > epsilon {
+	} else if jmath.Abs32(p3[0]-p0[0]) > jmath.Epsilon || jmath.Abs32(p3[1]-p0[1]) > jmath.Epsilon {
 		return p3, true
 	} else {
 		return [2]float32{}, false
@@ -482,61 +468,4 @@ func (enc *PathEncoder) insertStrokeCapMarkerSegment(isClosed bool) {
 			enc.firstStartTangentEnd[1],
 		)
 	}
-}
-
-type Tile struct {
-	_ structs.HostLayout
-
-	Backdrop          int32
-	SegmentCountOrIdx uint32
-}
-
-type LineSoup struct {
-	_ structs.HostLayout
-
-	PathIdx uint32
-	_       uint32 // padding
-	P0      [2]float32
-	P1      [2]float32
-}
-
-type SegmentCount struct {
-	_ structs.HostLayout
-
-	LineIdx uint32
-	Counts  uint32
-}
-
-type PathSegment struct {
-	_ structs.HostLayout
-
-	Point0 [2]float32
-	Point1 [2]float32
-	YEdge  float32
-	_      uint32 // padding
-}
-
-type Path struct {
-	_ structs.HostLayout
-
-	Bbox  [4]uint32
-	Tiles uint32
-	_     [3]uint32
-}
-
-type PathBbox struct {
-	_ structs.HostLayout
-
-	/// Minimum x value.
-	X0 int32
-	/// Minimum y value.
-	Y0 int32
-	/// Maximum x value.
-	X1 int32
-	/// Maximum y value.
-	Y1 int32
-	/// Style flags
-	DrawFlags uint32
-	/// Index into the transform stream.
-	TransIdx uint32
 }

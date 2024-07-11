@@ -1,4 +1,4 @@
-package jello
+package renderer
 
 import "encoding/binary"
 

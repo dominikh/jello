@@ -1,4 +1,4 @@
-package jello
+package encoding
 
 import (
 	"encoding/binary"
@@ -8,6 +8,7 @@ import (
 
 	"honnef.co/go/brush"
 	"honnef.co/go/curve"
+	"honnef.co/go/jello/jmath"
 )
 
 type Encoding struct {
@@ -15,7 +16,7 @@ type Encoding struct {
 	PathData   []byte
 	DrawTags   []DrawTag
 	DrawData   []byte
-	Transforms []Transform
+	Transforms []jmath.Transform
 	Styles     []Style
 	// Resources Resources
 	NumPaths        uint32
@@ -48,7 +49,7 @@ func (enc *Encoding) Reset() {
 	enc.Flags = 0
 }
 
-func (enc *Encoding) Append(other *Encoding, transform Transform) {
+func (enc *Encoding) Append(other *Encoding, transform jmath.Transform) {
 	enc.PathTags = append(enc.PathTags, other.PathTags...)
 	enc.PathData = append(enc.PathData, other.PathData...)
 	enc.DrawTags = append(enc.DrawTags, other.DrawTags...)
@@ -59,7 +60,7 @@ func (enc *Encoding) Append(other *Encoding, transform Transform) {
 	enc.NumOpenClips += other.NumOpenClips
 	// XXX(dh): is this assignment to enc.flags correct?
 	enc.Flags = other.Flags
-	if transform != Identity {
+	if transform != jmath.Identity {
 		enc.Transforms = slices.Grow(enc.Transforms, len(other.Transforms))
 		for _, t := range other.Transforms {
 			enc.Transforms = append(enc.Transforms, transform.Mul(t))
@@ -97,7 +98,7 @@ func (enc *Encoding) EncodeStyle(style Style) {
 	}
 }
 
-func (enc *Encoding) EncodeTransform(transform Transform) bool {
+func (enc *Encoding) EncodeTransform(transform jmath.Transform) bool {
 	if enc.Flags&forceNextTransform != 0 || len(enc.Transforms) == 0 || enc.Transforms[len(enc.Transforms)-1] != transform {
 		enc.PathTags = append(enc.PathTags, PathTagTransform)
 		enc.Transforms = append(enc.Transforms, transform)

@@ -1,10 +1,11 @@
-package jello
+package renderer
 
 import (
 	"iter"
 	"math"
 
 	"honnef.co/go/curve"
+	"honnef.co/go/jello/jmath"
 )
 
 //! This utility provides conservative size estimation for buffer allocations backing
@@ -46,13 +47,13 @@ func (be *BumpEstimator) Reset() {
 
 // impl BumpEstimator {
 // / Combine the counts of this estimator with `other` after applying an optional `transform`.
-func (be *BumpEstimator) Append(other *BumpEstimator, transform *Transform) {
+func (be *BumpEstimator) Append(other *BumpEstimator, transform *jmath.Transform) {
 	scale := transformScale(transform)
 	be.segments += uint32(math.Ceil(float64(other.segments) * scale))
 	be.lines.add(&other.lines, scale)
 }
 
-func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t Transform, stroke *curve.Stroke) {
+func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t jmath.Transform, stroke *curve.Stroke) {
 	caps := uint32(1)
 	fillCloseLines := uint32(1)
 	var joins, lineToLines, curveLines, curveCount, segments uint32
@@ -162,7 +163,7 @@ func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t Transfor
 }
 
 // / Produce the final total, applying an optional transform to all content.
-func (est *BumpEstimator) Tally(transform *Transform) BumpAllocatorMemory {
+func (est *BumpEstimator) Tally(transform *jmath.Transform) BumpAllocatorMemory {
 	scale := transformScale(transform)
 
 	// The post-flatten line estimate.
@@ -267,14 +268,14 @@ func (ls *estimateLineSoup) add(other *estimateLineSoup, scale float64) {
 }
 
 // TODO: The 32-bit Vec2 definition from cpu_shaders/util.rs could come in handy here.
-func transform(t Transform, v curve.Vec2) curve.Vec2 {
+func transform(t jmath.Transform, v curve.Vec2) curve.Vec2 {
 	return curve.Vec(
 		float64(t.Matrix[0])*v.X+float64(t.Matrix[2])*v.Y,
 		float64(t.Matrix[1])*v.X+float64(t.Matrix[3])*v.Y,
 	)
 }
 
-func transformScale(t *Transform) float64 {
+func transformScale(t *jmath.Transform) float64 {
 	if t != nil {
 		m := t.Matrix
 		v1x := float64(m[0]) + float64(m[3])
@@ -294,7 +295,7 @@ func approxArcLengthCubic(p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, p3 curve.
 	return 0.5 * (chordLen + polyLen)
 }
 
-func countSegmentsForCubic(p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, p3 curve.Vec2, t Transform) float64 {
+func countSegmentsForCubic(p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, p3 curve.Vec2, t jmath.Transform) float64 {
 	p0 = transform(t, p0)
 	p1 = transform(t, p1)
 	p2 = transform(t, p2)
@@ -302,12 +303,12 @@ func countSegmentsForCubic(p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, p3 curve
 	return math.Ceil(approxArcLengthCubic(p0, p1, p2, p3) * 0.0625 * math.Sqrt2)
 }
 
-func countSegmentsForQuadratic(p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, t Transform) float64 {
+func countSegmentsForQuadratic(p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, t jmath.Transform) float64 {
 	return countSegmentsForCubic(p0, p1.Lerp(p0, 0.333333), p1.Lerp(p2, 0.333333), p2, t)
 }
 
 // Estimate tile crossings for a line with known endpoints.
-func countSegmentsForLine(p0 curve.Point, p1 curve.Point, t Transform) uint32 {
+func countSegmentsForLine(p0 curve.Point, p1 curve.Point, t jmath.Transform) uint32 {
 	dxdy := p0.Sub(p1)
 	dxdy = transform(t, dxdy)
 	segments := math.Ceil(math.Ceil(math.Abs(dxdy.X))*0.0625) + math.Ceil(math.Ceil(math.Abs(dxdy.Y))*0.0625)
@@ -359,18 +360,40 @@ const sqrtOfDegreeTermCubic = 0.86602540378
 //	sqrt(2 * (2 - 1) / 8)
 const sqrtOfDegreeTermQuad = 0.5
 
-func wangQuadratic(rsqrtOfTol float64, p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, t Transform) float64 {
+func wangQuadratic(rsqrtOfTol float64, p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, t jmath.Transform) float64 {
 	v := p1.Mul(-2).Add(p0).Add(p2)
 	v = transform(t, v) // transform is distributive
 	m := v.Hypot()
 	return math.Ceil(sqrtOfDegreeTermQuad * math.Sqrt(m) * rsqrtOfTol)
 }
 
-func wangCubic(rsqrtOfTol float64, p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, p3 curve.Vec2, t Transform) float64 {
+func wangCubic(rsqrtOfTol float64, p0 curve.Vec2, p1 curve.Vec2, p2 curve.Vec2, p3 curve.Vec2, t jmath.Transform) float64 {
 	v1 := p1.Mul(-2).Add(p0).Add(p2)
 	v2 := p2.Mul(-2).Add(p1).Add(p3)
 	v1 = transform(t, v1)
 	v2 = transform(t, v2)
 	m := max(v1.Hypot(), v2.Hypot())
 	return math.Ceil(sqrtOfDegreeTermCubic * math.Sqrt(m) * rsqrtOfTol)
+}
+
+type option[T any] struct {
+	isSet bool
+	value T
+}
+
+func (opt *option[T]) set(v T) {
+	opt.isSet = true
+	opt.value = v
+}
+
+func (opt *option[T]) clear() {
+	opt.isSet = false
+	opt.value = *new(T)
+}
+
+func (opt option[T]) unwrap() T {
+	if !opt.isSet {
+		panic("option isn't set")
+	}
+	return opt.value
 }

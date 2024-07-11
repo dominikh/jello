@@ -1,4 +1,4 @@
-package jello
+package renderer
 
 type Images struct {
 	Images []struct{}

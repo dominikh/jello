@@ -5,11 +5,14 @@ import (
 
 	"honnef.co/go/brush"
 	"honnef.co/go/curve"
+	"honnef.co/go/jello/encoding"
+	"honnef.co/go/jello/jmath"
+	"honnef.co/go/jello/renderer"
 )
 
 type Scene struct {
-	Encoding  Encoding
-	Estimator BumpEstimator
+	Encoding  encoding.Encoding
+	Estimator renderer.BumpEstimator
 }
 
 func (s *Scene) Reset() {
@@ -17,10 +20,10 @@ func (s *Scene) Reset() {
 	s.Estimator.Reset()
 }
 
-func (s *Scene) BumpEstimate(affine *curve.Affine) BumpAllocatorMemory {
-	var trans *Transform
+func (s *Scene) BumpEstimate(affine *curve.Affine) renderer.BumpAllocatorMemory {
+	var trans *jmath.Transform
 	if affine != nil {
-		ret := transformFromKurbo(*affine)
+		ret := jmath.TransformFromKurbo(*affine)
 		trans = &ret
 	}
 	return s.Estimator.Tally(trans)
@@ -32,7 +35,7 @@ func (sc *Scene) PushLayer(
 	transform curve.Affine,
 	clip curve.Shape,
 ) {
-	t := transformFromKurbo(transform)
+	t := jmath.TransformFromKurbo(transform)
 	sc.Encoding.EncodeTransform(t)
 	sc.Encoding.EncodeFillStyle(brush.NonZero)
 	if !sc.Encoding.EncodeShape(clip, true) {
@@ -56,12 +59,12 @@ func (sc *Scene) Fill(
 	brushTransform *curve.Affine,
 	shape curve.Shape,
 ) {
-	t := transformFromKurbo(transform)
+	t := jmath.TransformFromKurbo(transform)
 	sc.Encoding.EncodeTransform(t)
 	sc.Encoding.EncodeFillStyle(style)
 	if sc.Encoding.EncodeShape(shape, true) {
 		if brushTransform != nil {
-			if sc.Encoding.EncodeTransform(transformFromKurbo(transform.Mul(*brushTransform))) {
+			if sc.Encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(*brushTransform))) {
 				sc.Encoding.SwapLastPathTags()
 			}
 		}
@@ -93,7 +96,7 @@ func (sc *Scene) Stroke(
 
 	const gpuStrokes = true // Set this to `true` to enable GPU-side stroking
 	if gpuStrokes {
-		t := transformFromKurbo(transform)
+		t := jmath.TransformFromKurbo(transform)
 		sc.Encoding.EncodeTransform(t)
 		sc.Encoding.EncodeStrokeStyle(style)
 
@@ -122,7 +125,7 @@ func (sc *Scene) Stroke(
 		}
 		if encodeResult {
 			if brushTransform != nil {
-				if sc.Encoding.EncodeTransform(transformFromKurbo(transform.Mul(*brushTransform))) {
+				if sc.Encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(*brushTransform))) {
 					sc.Encoding.SwapLastPathTags()
 				}
 			}
@@ -140,9 +143,9 @@ func (sc *Scene) Stroke(
 }
 
 func (sc *Scene) Append(other *Scene, transform *curve.Affine) {
-	t := Identity
+	t := jmath.Identity
 	if transform != nil {
-		t = transformFromKurbo(*transform)
+		t = jmath.TransformFromKurbo(*transform)
 	}
 	sc.Encoding.Append(&other.Encoding, t)
 	sc.Estimator.Append(&other.Estimator, &t)

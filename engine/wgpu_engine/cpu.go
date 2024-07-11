@@ -1,4 +1,4 @@
-package jello
+package wgpu_engine
 
 type CPUBinding interface {
 	// One of CPUBuffer, CPUBufferRW, CPUTexture

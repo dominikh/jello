@@ -1,4 +1,4 @@
-package jello
+package wgpu_engine
 
 // OPT reuse bind groups
 
@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/bits"
 
+	"honnef.co/go/jello/renderer"
 	"honnef.co/go/wgpu"
 )
 
@@ -14,32 +15,38 @@ type UninitializedShader struct {
 	Wgsl     []byte
 	Label    string
 	Entries  []wgpu.BindGroupLayoutEntry
-	ShaderID ShaderID
+	ShaderID renderer.ShaderID
 }
 
-type WGPUEngine struct {
+type Engine struct {
+	Device              *wgpu.Device
 	Shaders             []Shader
 	Pool                ResourcePool
 	BindMap             BindMap
-	Downloads           map[ResourceID]*wgpu.Buffer
+	Downloads           map[renderer.ResourceID]*wgpu.Buffer
 	ShadersToInitialize []UninitializedShader
 	UseCPU              bool
+
+	resolver *renderer.Resolver
+	blit     *blitPipeline
+	shaders  *renderer.FullShaders
+	target   *targetTexture
 }
 
-type WGPUShader struct {
+type wgpuShader struct {
 	Label           string
 	Pipeline        *wgpu.ComputePipeline
 	BindGroupLayout *wgpu.BindGroupLayout
 }
 
-type CPUShader struct {
+type cpuShader struct {
 	Shader func(uint32, []CPUBinding)
 }
 
 type Shader struct {
 	Label string
-	WGPU  *WGPUShader
-	CPU   *CPUShader
+	WGPU  *wgpuShader
+	CPU   *cpuShader
 }
 
 func (s Shader) Select() any {
@@ -57,12 +64,12 @@ type ExternalResource interface {
 }
 
 type ExternalBuffer struct {
-	Proxy  BufferProxy
+	Proxy  renderer.BufferProxy
 	Buffer *wgpu.Buffer
 }
 
 type ExternalImage struct {
-	Proxy ImageProxy
+	Proxy renderer.ImageProxy
 	View  *wgpu.TextureView
 }
 
@@ -76,12 +83,12 @@ type BindMapBuffer struct {
 }
 
 type BindMap struct {
-	BufMap   map[ResourceID]*BindMapBuffer
-	ImageMap map[ResourceID]struct {
+	BufMap   map[renderer.ResourceID]*BindMapBuffer
+	ImageMap map[renderer.ResourceID]struct {
 		Texture *wgpu.Texture
 		View    *wgpu.TextureView
 	}
-	PendingClears map[ResourceID]struct{}
+	PendingClears map[renderer.ResourceID]struct{}
 }
 
 type BufferProperties struct {
@@ -96,46 +103,54 @@ type ResourcePool struct {
 // XXX we probably don't need this type, it's probably only useful with Rust
 // lifetimes
 type TransientBindMap struct {
-	Bufs   map[ResourceID]TransientBuf
-	Images map[ResourceID]*wgpu.TextureView
+	Bufs   map[renderer.ResourceID]TransientBuf
+	Images map[renderer.ResourceID]*wgpu.TextureView
 }
 
 type TransientBuf interface {
 	// One of []byte and wgpu.Buffer
 }
 
-func NewWGPUEngine(useCPU bool) *WGPUEngine {
-	return &WGPUEngine{
+func NewWGPUEngine(dev *wgpu.Device, options *RendererOptions) *Engine {
+	eng := &Engine{
+		Device: dev,
 		Pool: ResourcePool{
 			Bufs: make(map[BufferProperties][]*wgpu.Buffer),
 		},
 		BindMap: BindMap{
-			BufMap: make(map[ResourceID]*BindMapBuffer),
-			ImageMap: make(map[ResourceID]struct {
+			BufMap: make(map[renderer.ResourceID]*BindMapBuffer),
+			ImageMap: make(map[renderer.ResourceID]struct {
 				Texture *wgpu.Texture
 				View    *wgpu.TextureView
 			}),
-			PendingClears: make(map[ResourceID]struct{})},
-		Downloads: make(map[ResourceID]*wgpu.Buffer),
-		UseCPU:    useCPU,
+			PendingClears: make(map[renderer.ResourceID]struct{})},
+		Downloads: make(map[renderer.ResourceID]*wgpu.Buffer),
+		UseCPU:    options.UseCPU,
+
+		resolver: renderer.NewResolver(),
 	}
+	eng.shaders = eng.newFullShaders()
+	eng.BuildShadersIfNeeded(1)
+	// XXX support surfaceless engine use
+	eng.blit = newBlitPipeline(eng.Device, options.SurfaceFormat)
+	return eng
 }
 
-func (eng *WGPUEngine) UseParallelInitialization() {
+func (eng *Engine) UseParallelInitialization() {
 	if eng.ShadersToInitialize != nil {
 		return
 	}
 	eng.ShadersToInitialize = []UninitializedShader{}
 }
 
-func (eng *WGPUEngine) BuildShadersIfNeeded(dev *wgpu.Device, numThreads int) {
+func (eng *Engine) BuildShadersIfNeeded(numThreads int) {
 	if eng.ShadersToInitialize == nil {
 		return
 	}
 	newShaders := eng.ShadersToInitialize
 	// XXX implement parallelism
 	for _, s := range newShaders {
-		shader := eng.CreateComputePipeline(dev, s.Label, s.Wgsl, s.Entries)
+		shader := eng.CreateComputePipeline(s.Label, s.Wgsl, s.Entries)
 		if int(s.ShaderID) >= len(eng.Shaders) {
 			if cap(eng.Shaders) <= int(s.ShaderID) {
 				c := make([]Shader, s.ShaderID+1)
@@ -153,17 +168,16 @@ type CPUShaderType interface {
 	// XXX implement
 }
 
-func (eng *WGPUEngine) AddShader(
-	dev *wgpu.Device,
+func (eng *Engine) addShader(
 	label string,
 	wgsl []byte,
-	layout []BindType,
+	layout []renderer.BindType,
 	cpuShader CPUShaderType,
-) ShaderID {
-	add := func(shader Shader) ShaderID {
+) renderer.ShaderID {
+	add := func(shader Shader) renderer.ShaderID {
 		id := len(eng.Shaders)
 		eng.Shaders = append(eng.Shaders, shader)
-		return ShaderID(id)
+		return renderer.ShaderID(id)
 	}
 
 	if eng.UseCPU {
@@ -173,9 +187,9 @@ func (eng *WGPUEngine) AddShader(
 	entries := make([]wgpu.BindGroupLayoutEntry, len(layout))
 	for i, bindType := range layout {
 		switch bindType.Type {
-		case BindTypeBuffer, BindTypeBufReadOnly:
+		case renderer.BindTypeBuffer, renderer.BindTypeBufReadOnly:
 			var typ wgpu.BufferBindingType
-			if bindType.Type == BindTypeBuffer {
+			if bindType.Type == renderer.BindTypeBuffer {
 				typ = wgpu.BufferBindingTypeStorage
 			} else {
 				typ = wgpu.BufferBindingTypeReadOnlyStorage
@@ -189,7 +203,7 @@ func (eng *WGPUEngine) AddShader(
 					MinBindingSize:   0, // XXX 0 or Undefined?
 				},
 			}
-		case BindTypeUniform:
+		case renderer.BindTypeUniform:
 			entries[i] = wgpu.BindGroupLayoutEntry{
 				Binding:    uint32(i),
 				Visibility: wgpu.ShaderStageCompute,
@@ -200,18 +214,18 @@ func (eng *WGPUEngine) AddShader(
 				},
 			}
 
-		case BindTypeImage:
+		case renderer.BindTypeImage:
 			entries[i] = wgpu.BindGroupLayoutEntry{
 				Binding:    uint32(i),
 				Visibility: wgpu.ShaderStageCompute,
 				StorageTexture: &wgpu.StorageTextureBindingLayout{
 					Access:        wgpu.StorageTextureAccessWriteOnly,
-					Format:        bindType.ImageFormat.toWGPU(),
+					Format:        imageFormatToWGPU(bindType.ImageFormat),
 					ViewDimension: wgpu.TextureViewDimension2D,
 				},
 			}
 
-		case BindTypeImageRead:
+		case renderer.BindTypeImageRead:
 			entries[i] = wgpu.BindGroupLayoutEntry{
 				Binding:    uint32(i),
 				Visibility: wgpu.ShaderStageCompute,
@@ -238,61 +252,60 @@ func (eng *WGPUEngine) AddShader(
 		return id
 	}
 
-	wgpu := eng.CreateComputePipeline(dev, label, wgsl, entries)
+	wgpu := eng.CreateComputePipeline(label, wgsl, entries)
 	return add(Shader{
 		Label: label,
 		WGPU:  &wgpu,
 	})
 }
 
-func (eng *WGPUEngine) RunRecording(
-	dev *wgpu.Device,
+func (eng *Engine) RunRecording(
 	queue *wgpu.Queue,
-	recording *Recording,
+	recording *renderer.Recording,
 	externalResources []ExternalResource,
 	label string,
 	// TODO profiler
 ) {
-	freeBufs := map[ResourceID]struct{}{}
-	freeImages := map[ResourceID]struct{}{}
+	freeBufs := map[renderer.ResourceID]struct{}{}
+	freeImages := map[renderer.ResourceID]struct{}{}
 	transientMap := NewTransientBindMap(externalResources)
 	defer transientMap.Clear()
 
-	encoder := dev.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: label})
+	encoder := eng.Device.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: label})
 	defer encoder.Release()
 
 	// TODO profiler
 	// OPT release things after every command
 	for _, cmd := range recording.Commands {
 		switch cmd := cmd.(type) {
-		case Upload:
+		case renderer.Upload:
 			bufProxy := cmd.Buffer
 			bytes := cmd.Data
 			transientMap.Bufs[bufProxy.ID] = bytes
 			usage := wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst | wgpu.BufferUsageStorage
-			buf := eng.Pool.GetBuf(bufProxy.Size, bufProxy.Name, usage, dev)
+			buf := eng.Pool.GetBuf(bufProxy.Size, bufProxy.Name, usage, eng.Device)
 			queue.WriteBuffer(buf, 0, bytes)
 			eng.BindMap.InsertBuf(bufProxy, buf)
 
-		case UploadUniform:
+		case renderer.UploadUniform:
 			bufProxy := cmd.Buffer
 			bytes := cmd.Data
 			transientMap.Bufs[bufProxy.ID] = bytes
 			usage := wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst
 			// XXXXXX "config" buffer is created here
-			buf := eng.Pool.GetBuf(bufProxy.Size, bufProxy.Name, usage, dev)
+			buf := eng.Pool.GetBuf(bufProxy.Size, bufProxy.Name, usage, eng.Device)
 			queue.WriteBuffer(buf, 0, bytes)
 			eng.BindMap.InsertBuf(bufProxy, buf)
 
-		case UploadImage:
+		case renderer.UploadImage:
 			imageProxy := cmd.Image
 			bytes := cmd.Data
-			format := imageProxy.Format.toWGPU()
+			format := imageFormatToWGPU(imageProxy.Format)
 			blockSize, ok := format.BlockCopySize(wgpu.TextureAspectAll)
 			if !ok {
 				panic("image format must have a valid block size")
 			}
-			texture := dev.CreateTexture(&wgpu.TextureDescriptor{
+			texture := eng.Device.CreateTexture(&wgpu.TextureDescriptor{
 				Size: wgpu.Extent3D{
 					Width:              imageProxy.Width,
 					Height:             imageProxy.Height,
@@ -333,15 +346,15 @@ func (eng *WGPUEngine) RunRecording(
 			)
 			eng.BindMap.InsertImage(imageProxy.ID, texture, textureView)
 
-		case WriteImage:
+		case renderer.WriteImage:
 			proxy := cmd.Image
 			x := cmd.Coords[0]
 			y := cmd.Coords[1]
 			width := cmd.Coords[2]
 			height := cmd.Coords[3]
 			data := cmd.Data
-			texture, _ := eng.BindMap.GetOrCreateImage(proxy, dev)
-			format := proxy.Format.toWGPU()
+			texture, _ := eng.BindMap.GetOrCreateImage(proxy, eng.Device)
+			format := imageFormatToWGPU(proxy.Format)
 			blockSize, ok := format.BlockCopySize(wgpu.TextureAspectAll)
 			if !ok {
 				panic("image format must have a valid block size")
@@ -366,19 +379,19 @@ func (eng *WGPUEngine) RunRecording(
 				},
 			)
 
-		case Dispatch:
+		case renderer.Dispatch:
 			shaderID := cmd.Shader
 			wgSize := cmd.WorkgroupSize
 			bindings := cmd.Bindings
 			shader := eng.Shaders[shaderID]
 			switch s := shader.Select().(type) {
-			case *CPUShader:
+			case *cpuShader:
 				panic("XXX no support for CPU shaders")
-			case *WGPUShader:
+			case *wgpuShader:
 				bindGroup := transientMap.CreateBindGroup(
 					&eng.BindMap,
 					&eng.Pool,
-					dev,
+					eng.Device,
 					queue,
 					encoder,
 					s.BindGroupLayout,
@@ -398,20 +411,20 @@ func (eng *WGPUEngine) RunRecording(
 				panic(fmt.Sprintf("unhandled type %T", s))
 			}
 
-		case DispatchIndirect:
+		case renderer.DispatchIndirect:
 			shaderID := cmd.Shader
 			proxy := cmd.Buffer
 			offset := cmd.Offset
 			bindings := cmd.Bindings
 			shader := eng.Shaders[shaderID]
 			switch s := shader.Select().(type) {
-			case *CPUShader:
+			case *cpuShader:
 				panic("XXX no support for CPU shaders")
-			case *WGPUShader:
+			case *wgpuShader:
 				bindGroup := transientMap.CreateBindGroup(
 					&eng.BindMap,
 					&eng.Pool,
-					dev,
+					eng.Device,
 					queue,
 					encoder,
 					s.BindGroupLayout,
@@ -421,7 +434,7 @@ func (eng *WGPUEngine) RunRecording(
 				transientMap.MaterializeGPUBufForIndirect(
 					&eng.BindMap,
 					&eng.Pool,
-					dev,
+					eng.Device,
 					queue,
 					proxy,
 				)
@@ -443,18 +456,18 @@ func (eng *WGPUEngine) RunRecording(
 				panic(fmt.Sprintf("unhandled type %T", s))
 			}
 
-		case Download:
+		case renderer.Download:
 			proxy := cmd.Buffer
 			srcBuf, ok := eng.BindMap.GetGPUBuf(proxy.ID)
 			if !ok {
 				panic("tried using unavailable buffer for download")
 			}
 			usage := wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst
-			buf := eng.Pool.GetBuf(proxy.Size, "download", usage, dev)
+			buf := eng.Pool.GetBuf(proxy.Size, "download", usage, eng.Device)
 			encoder.CopyBufferToBuffer(srcBuf, 0, buf, 0, proxy.Size)
 			eng.Downloads[proxy.ID] = buf
 
-		case Clear:
+		case renderer.Clear:
 			proxy := cmd.Buffer
 			offset := cmd.Offset
 			size := cmd.Size
@@ -475,10 +488,10 @@ func (eng *WGPUEngine) RunRecording(
 				eng.BindMap.PendingClears[proxy.ID] = struct{}{}
 			}
 
-		case FreeBuffer:
+		case renderer.FreeBuffer:
 			freeBufs[cmd.Buffer.ID] = struct{}{}
 
-		case FreeImage:
+		case renderer.FreeImage:
 			freeImages[cmd.Image.ID] = struct{}{}
 
 		default:
@@ -515,33 +528,32 @@ func (eng *WGPUEngine) RunRecording(
 	}
 }
 
-func (eng *WGPUEngine) GetDownload(buf BufferProxy) (*wgpu.Buffer, bool) {
+func (eng *Engine) GetDownload(buf renderer.BufferProxy) (*wgpu.Buffer, bool) {
 	got, ok := eng.Downloads[buf.ID]
 	return got, ok
 }
 
-func (eng *WGPUEngine) FreeDownload(buf BufferProxy) {
+func (eng *Engine) FreeDownload(buf renderer.BufferProxy) {
 	delete(eng.Downloads, buf.ID)
 }
 
-func (eng *WGPUEngine) CreateComputePipeline(
-	dev *wgpu.Device,
+func (eng *Engine) CreateComputePipeline(
 	label string,
 	wgsl []byte,
 	entries []wgpu.BindGroupLayoutEntry,
-) WGPUShader {
-	shaderModule := dev.MustCreateShaderModule(wgpu.ShaderModuleDescriptor{
+) wgpuShader {
+	shaderModule := eng.Device.MustCreateShaderModule(wgpu.ShaderModuleDescriptor{
 		Label:  label,
 		Source: wgpu.ShaderSourceWGSL(wgsl),
 	})
-	bindGroupLayout := dev.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	bindGroupLayout := eng.Device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: entries,
 	})
-	computePipelineLayout := dev.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+	computePipelineLayout := eng.Device.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
 		BindGroupLayouts: []*wgpu.BindGroupLayout{bindGroupLayout},
 	})
 	defer computePipelineLayout.Release()
-	pipeline := dev.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pipeline := eng.Device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label:  label,
 		Layout: computePipelineLayout,
 		Compute: wgpu.ProgrammableStageDescriptor{
@@ -551,21 +563,21 @@ func (eng *WGPUEngine) CreateComputePipeline(
 		},
 	})
 
-	return WGPUShader{
+	return wgpuShader{
 		Label:           label,
 		Pipeline:        pipeline,
 		BindGroupLayout: bindGroupLayout,
 	}
 }
 
-func (m *BindMap) InsertBuf(proxy BufferProxy, buffer *wgpu.Buffer) {
+func (m *BindMap) InsertBuf(proxy renderer.BufferProxy, buffer *wgpu.Buffer) {
 	m.BufMap[proxy.ID] = &BindMapBuffer{
 		Buffer: buffer,
 		Label:  proxy.Name,
 	}
 }
 
-func (m *BindMap) GetGPUBuf(id ResourceID) (*wgpu.Buffer, bool) {
+func (m *BindMap) GetGPUBuf(id renderer.ResourceID) (*wgpu.Buffer, bool) {
 	mbuf, ok := m.BufMap[id]
 	if !ok {
 		return nil, false
@@ -574,7 +586,7 @@ func (m *BindMap) GetGPUBuf(id ResourceID) (*wgpu.Buffer, bool) {
 	return buf, ok
 }
 
-func (m *BindMap) GetCPUBuf(id ResourceID) CPUBinding {
+func (m *BindMap) GetCPUBuf(id renderer.ResourceID) CPUBinding {
 	buf, ok := m.BufMap[id].Buffer.([]byte)
 	if !ok {
 		panic("getting CPU buffer, but it's on GPU")
@@ -582,7 +594,7 @@ func (m *BindMap) GetCPUBuf(id ResourceID) CPUBinding {
 	return CPUBufferRW(buf)
 }
 
-func (m *BindMap) MaterializeCPUBuf(proxy BufferProxy) {
+func (m *BindMap) MaterializeCPUBuf(proxy renderer.BufferProxy) {
 	if _, ok := m.BufMap[proxy.ID]; !ok {
 		buffer := make([]byte, proxy.Size)
 		m.BufMap[proxy.ID] = &BindMapBuffer{
@@ -592,7 +604,7 @@ func (m *BindMap) MaterializeCPUBuf(proxy BufferProxy) {
 	}
 }
 
-func (m *BindMap) InsertImage(id ResourceID, image *wgpu.Texture, imageView *wgpu.TextureView) {
+func (m *BindMap) InsertImage(id renderer.ResourceID, image *wgpu.Texture, imageView *wgpu.TextureView) {
 	m.ImageMap[id] = struct {
 		Texture *wgpu.Texture
 		View    *wgpu.TextureView
@@ -601,20 +613,20 @@ func (m *BindMap) InsertImage(id ResourceID, image *wgpu.Texture, imageView *wgp
 	}
 }
 
-func (m *BindMap) GetBuf(proxy BufferProxy) (*BindMapBuffer, bool) {
+func (m *BindMap) GetBuf(proxy renderer.BufferProxy) (*BindMapBuffer, bool) {
 	b, ok := m.BufMap[proxy.ID]
 	return b, ok
 }
 
 func (m *BindMap) GetOrCreateImage(
-	proxy ImageProxy,
+	proxy renderer.ImageProxy,
 	dev *wgpu.Device,
 ) (*wgpu.Texture, *wgpu.TextureView) {
 	if entry, ok := m.ImageMap[proxy.ID]; ok {
 		return entry.Texture, entry.View
 	}
 
-	format := proxy.Format.toWGPU()
+	format := imageFormatToWGPU(proxy.Format)
 	texture := dev.CreateTexture(&wgpu.TextureDescriptor{
 		Size: wgpu.Extent3D{
 			Width:              proxy.Width,
@@ -634,7 +646,7 @@ func (m *BindMap) GetOrCreateImage(
 		BaseMipLevel:    0,
 		BaseArrayLayer:  0,
 		ArrayLayerCount: ^uint32(0),
-		Format:          proxy.Format.toWGPU(),
+		Format:          imageFormatToWGPU(proxy.Format),
 	})
 	m.ImageMap[proxy.ID] = struct {
 		Texture *wgpu.Texture
@@ -685,7 +697,7 @@ func poolSizeClass(x uint64, numBits uint32) uint64 {
 }
 
 func (b *BindMapBuffer) UploadIfNeeded(
-	proxy BufferProxy,
+	proxy renderer.BufferProxy,
 	dev *wgpu.Device,
 	queue *wgpu.Queue,
 	pool *ResourcePool,
@@ -704,8 +716,8 @@ func (b *BindMapBuffer) UploadIfNeeded(
 }
 
 func NewTransientBindMap(externalResources []ExternalResource) TransientBindMap {
-	bufs := map[ResourceID]TransientBuf{}
-	images := map[ResourceID]*wgpu.TextureView{}
+	bufs := map[renderer.ResourceID]TransientBuf{}
+	images := map[renderer.ResourceID]*wgpu.TextureView{}
 	for _, res := range externalResources {
 		switch res := res.(type) {
 		case ExternalBuffer:
@@ -738,7 +750,7 @@ func (m *TransientBindMap) MaterializeGPUBufForIndirect(
 	pool *ResourcePool,
 	dev *wgpu.Device,
 	queue *wgpu.Queue,
-	buf BufferProxy,
+	buf renderer.BufferProxy,
 ) {
 	if _, ok := m.Bufs[buf.ID]; ok {
 		return
@@ -755,11 +767,11 @@ func (m *TransientBindMap) CreateBindGroup(
 	queue *wgpu.Queue,
 	encoder *wgpu.CommandEncoder,
 	layout *wgpu.BindGroupLayout,
-	bindings []ResourceProxy,
+	bindings []renderer.ResourceProxy,
 ) *wgpu.BindGroup {
 	for _, proxy := range bindings {
 		switch proxy := proxy.(type) {
-		case BufferProxy:
+		case renderer.BufferProxy:
 			if _, ok := m.Bufs[proxy.ID]; ok {
 				continue
 			}
@@ -781,14 +793,14 @@ func (m *TransientBindMap) CreateBindGroup(
 					Label:  proxy.Name,
 				}
 			}
-		case ImageProxy:
+		case renderer.ImageProxy:
 			if _, ok := m.Images[proxy.ID]; ok {
 				continue
 			}
 			if _, ok := bindMap.ImageMap[proxy.ID]; ok {
 				continue
 			}
-			format := proxy.Format.toWGPU()
+			format := imageFormatToWGPU(proxy.Format)
 			texture := dev.CreateTexture(&wgpu.TextureDescriptor{
 				Size: wgpu.Extent3D{
 					Width:              proxy.Width,
@@ -809,7 +821,7 @@ func (m *TransientBindMap) CreateBindGroup(
 				BaseMipLevel:    0,
 				BaseArrayLayer:  0,
 				ArrayLayerCount: ^uint32(0),
-				Format:          proxy.Format.toWGPU(),
+				Format:          imageFormatToWGPU(proxy.Format),
 			})
 			bindMap.ImageMap[proxy.ID] = struct {
 				Texture *wgpu.Texture
@@ -825,7 +837,7 @@ func (m *TransientBindMap) CreateBindGroup(
 	entries := make([]wgpu.BindGroupEntry, len(bindings))
 	for i, proxy := range bindings {
 		switch proxy := proxy.(type) {
-		case BufferProxy:
+		case renderer.BufferProxy:
 			var buf *wgpu.Buffer
 			switch b := m.Bufs[proxy.ID].(type) {
 			case *wgpu.Buffer:
@@ -842,7 +854,7 @@ func (m *TransientBindMap) CreateBindGroup(
 				Buffer:  buf,
 				Size:    ^uint64(0),
 			}
-		case ImageProxy:
+		case renderer.ImageProxy:
 			view, ok := m.Images[proxy.ID]
 			if !ok {
 				img, ok := bindMap.ImageMap[proxy.ID]
@@ -869,11 +881,11 @@ func (m *TransientBindMap) CreateBindGroup(
 
 func (m *TransientBindMap) CreateCPUResources(
 	bindMap *BindMap,
-	bindings []ResourceProxy,
+	bindings []renderer.ResourceProxy,
 ) []CPUBinding {
 	for _, resource := range bindings {
 		switch resource := resource.(type) {
-		case BufferProxy:
+		case renderer.BufferProxy:
 			switch tbuf := m.Bufs[resource.ID].(type) {
 			case []byte:
 			case *wgpu.Buffer:
@@ -883,7 +895,7 @@ func (m *TransientBindMap) CreateCPUResources(
 			default:
 				panic(fmt.Sprintf("unhandled type %T", tbuf))
 			}
-		case ImageProxy:
+		case renderer.ImageProxy:
 			panic("not implemented")
 		default:
 			panic(fmt.Sprintf("unhandled type %T", resource))
@@ -893,14 +905,14 @@ func (m *TransientBindMap) CreateCPUResources(
 	out := make([]CPUBinding, len(bindings))
 	for i, resource := range bindings {
 		switch resource := resource.(type) {
-		case BufferProxy:
+		case renderer.BufferProxy:
 			switch tbuf := m.Bufs[resource.ID].(type) {
 			case []byte:
 				out[i] = CPUBuffer(tbuf)
 			default:
 				out[i] = bindMap.GetCPUBuf(resource.ID)
 			}
-		case ImageProxy:
+		case renderer.ImageProxy:
 			panic("not implemented")
 		default:
 			panic(fmt.Sprintf("unhandled type %T", resource))

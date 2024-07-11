@@ -1,13 +1,58 @@
-package jello
+package renderer
 
 import (
+	"honnef.co/go/brush"
+	"honnef.co/go/jello/encoding"
 	"honnef.co/go/safeish"
 )
+
+type FullShaders struct {
+	PathtagReduce    ShaderID
+	PathtagReduce2   ShaderID
+	PathtagScan1     ShaderID
+	PathtagScanSmall ShaderID
+	PathtagScanLarge ShaderID
+	BboxClear        ShaderID
+	Flatten          ShaderID
+	DrawReduce       ShaderID
+	DrawLeaf         ShaderID
+	ClipReduce       ShaderID
+	ClipLeaf         ShaderID
+	Binning          ShaderID
+	TileAlloc        ShaderID
+	BackdropDyn      ShaderID
+	PathCountSetup   ShaderID
+	PathCount        ShaderID
+	Coarse           ShaderID
+	PathTilingSetup  ShaderID
+	PathTiling       ShaderID
+	FineArea         ShaderID
+	FineMSAA8        ShaderID
+	FineMSAA16       ShaderID
+	// 2-level dispatch works for CPU pathtag scan even for large
+	// inputs 3-level is not yet implemented.
+	PathtagIsCPU bool
+}
 
 type Render struct {
 	fineWgCount   WorkgroupSize
 	fineResources fineResources
 	maskBuf       ResourceProxy
+}
+
+type AaConfig int
+
+const (
+	Area AaConfig = iota
+	Msaa8
+	Msaa16
+)
+
+type RenderParams struct {
+	BaseColor          brush.Color
+	Width              uint32
+	Height             uint32
+	AntialiasingMethod AaConfig
 }
 
 type fineResources struct {
@@ -26,7 +71,7 @@ type fineResources struct {
 }
 
 func (r *Render) RenderEncodingCoarse(
-	encoding *Encoding,
+	encoding *encoding.Encoding,
 	resolver *Resolver,
 	shaders *FullShaders,
 	params *RenderParams,
@@ -414,4 +459,26 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording) {
 
 func (r *Render) OutImage() ImageProxy {
 	return r.fineResources.outImage
+}
+
+func RenderFull(
+	enc *encoding.Encoding,
+	resolver *Resolver,
+	shaders *FullShaders,
+	params *RenderParams,
+) (*Recording, ResourceProxy) {
+	return RenderEncodingFull(enc, resolver, shaders, params)
+}
+
+func RenderEncodingFull(
+	encoding *encoding.Encoding,
+	resolver *Resolver,
+	shaders *FullShaders,
+	params *RenderParams,
+) (*Recording, ResourceProxy) {
+	var render Render
+	recording := render.RenderEncodingCoarse(encoding, resolver, shaders, params, false)
+	outImage := render.OutImage()
+	render.RecordFine(shaders, recording)
+	return recording, outImage
 }

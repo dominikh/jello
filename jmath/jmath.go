@@ -1,4 +1,4 @@
-package jello
+package jmath
 
 import (
 	"math"
@@ -6,6 +6,12 @@ import (
 
 	"honnef.co/go/curve"
 )
+
+const Epsilon = 1e-12
+
+func Abs32(f float32) float32 {
+	return float32(math.Abs(float64(f)))
+}
 
 type Transform struct {
 	_ structs.HostLayout
@@ -43,7 +49,7 @@ func (t Transform) Mul(other Transform) Transform {
 // /
 // / TODO: We should consider adopting <https://crates.io/crates/half> as a dependency since it nicely
 // / wraps native ARM and x86 instructions for floating-point conversion.
-func float16(val float32) uint16 {
+func Float16(val float32) uint16 {
 	const inf32 uint32 = 255 << 23
 	const inf16 uint32 = 31 << 23
 	const magic uint32 = 15 << 23
@@ -83,10 +89,19 @@ func float16(val float32) uint16 {
 	return output | uint16(sign>>16)
 }
 
-func transformFromKurbo(transform curve.Affine) Transform {
+func TransformFromKurbo(transform curve.Affine) Transform {
 	c := transform.Coefficients()
 	return Transform{
 		Matrix:      [4]float32{float32(c[0]), float32(c[1]), float32(c[2]), float32(c[3])},
 		Translation: [2]float32{float32(c[4]), float32(c[5])},
 	}
+}
+
+func AlignUp(len int, alignment int) int {
+	return (len + alignment - 1) & -alignment
+}
+
+// TODO(dh): make alignUp generic and remove alignUpU32
+func AlignUp32(len uint32, alignment uint32) uint32 {
+	return (len + alignment - 1) & -alignment
 }

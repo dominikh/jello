@@ -1,10 +1,8 @@
-package jello
+package renderer
 
 import (
 	"fmt"
 	"sync/atomic"
-
-	"honnef.co/go/wgpu"
 )
 
 var resourceID atomic.Uint64
@@ -109,17 +107,6 @@ const (
 	Rgba8 ImageFormat = iota
 	Bgra8
 )
-
-func (f ImageFormat) toWGPU() wgpu.TextureFormat {
-	switch f {
-	case Rgba8:
-		return wgpu.TextureFormatRGBA8Unorm
-	case Bgra8:
-		return wgpu.TextureFormatBGRA8Unorm
-	default:
-		panic(fmt.Sprintf("unhandled value %d", f))
-	}
-}
 
 type ImageProxy struct {
 	Width  uint32
