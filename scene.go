@@ -11,48 +11,54 @@ import (
 )
 
 type Scene struct {
-	Encoding  encoding.Encoding
-	Estimator renderer.BumpEstimator
+	encoding  encoding.Encoding
+	estimator renderer.BumpEstimator
 }
 
 func (s *Scene) Reset() {
-	s.Encoding.Reset()
-	s.Estimator.Reset()
+	s.encoding.Reset()
+	s.estimator.Reset()
 }
 
-func (s *Scene) BumpEstimate(affine *curve.Affine) renderer.BumpAllocatorMemory {
+// Encoding returns the scene encoding. The scene mustn't be manipulated
+// concurrently with using the encoding.
+func (s *Scene) Encoding() *encoding.Encoding {
+	return &s.encoding
+}
+
+func (s *Scene) bumpEstimate(affine *curve.Affine) renderer.BumpAllocatorMemory {
 	var trans *jmath.Transform
 	if affine != nil {
 		ret := jmath.TransformFromKurbo(*affine)
 		trans = &ret
 	}
-	return s.Estimator.Tally(trans)
+	return s.estimator.Tally(trans)
 }
 
-func (sc *Scene) PushLayer(
+func (s *Scene) PushLayer(
 	blend brush.BlendMode,
 	alpha float32,
 	transform curve.Affine,
 	clip curve.Shape,
 ) {
 	t := jmath.TransformFromKurbo(transform)
-	sc.Encoding.EncodeTransform(t)
-	sc.Encoding.EncodeFillStyle(brush.NonZero)
-	if !sc.Encoding.EncodeShape(clip, true) {
+	s.encoding.EncodeTransform(t)
+	s.encoding.EncodeFillStyle(brush.NonZero)
+	if !s.encoding.EncodeShape(clip, true) {
 		// If the layer shape is invalid, encode a valid empty path. This suppresses
 		// all drawing until the layer is popped.
-		sc.Encoding.EncodeShape(curve.Rect{}, true)
+		s.encoding.EncodeShape(curve.Rect{}, true)
 	} else {
-		sc.Estimator.CountPath(clip.PathElements(0.1), t, nil)
+		s.estimator.CountPath(clip.PathElements(0.1), t, nil)
 	}
-	sc.Encoding.EncodeBeginClip(blend, min(max(alpha, 0), 1))
+	s.encoding.EncodeBeginClip(blend, min(max(alpha, 0), 1))
 }
 
-func (sc *Scene) PopLayer() {
-	sc.Encoding.EncodeEndClip()
+func (s *Scene) PopLayer() {
+	s.encoding.EncodeEndClip()
 }
 
-func (sc *Scene) Fill(
+func (s *Scene) Fill(
 	style brush.Fill,
 	transform curve.Affine,
 	brush brush.Brush,
@@ -60,20 +66,20 @@ func (sc *Scene) Fill(
 	shape curve.Shape,
 ) {
 	t := jmath.TransformFromKurbo(transform)
-	sc.Encoding.EncodeTransform(t)
-	sc.Encoding.EncodeFillStyle(style)
-	if sc.Encoding.EncodeShape(shape, true) {
+	s.encoding.EncodeTransform(t)
+	s.encoding.EncodeFillStyle(style)
+	if s.encoding.EncodeShape(shape, true) {
 		if brushTransform != nil {
-			if sc.Encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(*brushTransform))) {
-				sc.Encoding.SwapLastPathTags()
+			if s.encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(*brushTransform))) {
+				s.encoding.SwapLastPathTags()
 			}
 		}
-		sc.Encoding.EncodeBrush(brush, 1.0)
-		sc.Estimator.CountPath(shape.PathElements(0.1), t, nil)
+		s.encoding.EncodeBrush(brush, 1.0)
+		s.estimator.CountPath(shape.PathElements(0.1), t, nil)
 	}
 }
 
-func (sc *Scene) Stroke(
+func (s *Scene) Stroke(
 	style curve.Stroke,
 	transform curve.Affine,
 	b brush.Brush,
@@ -97,16 +103,16 @@ func (sc *Scene) Stroke(
 	const gpuStrokes = true // Set this to `true` to enable GPU-side stroking
 	if gpuStrokes {
 		t := jmath.TransformFromKurbo(transform)
-		sc.Encoding.EncodeTransform(t)
-		sc.Encoding.EncodeStrokeStyle(style)
+		s.encoding.EncodeTransform(t)
+		s.encoding.EncodeStrokeStyle(style)
 
 		// We currently don't support dashing on the GPU. If the style has a dash pattern, then
 		// we convert it into stroked paths on the CPU and encode those as individual draw
 		// objects.
 		var encodeResult bool
 		if len(style.DashPattern) == 0 {
-			sc.Estimator.CountPath(shape.PathElements(shapeTolerance), t, &style)
-			encodeResult = sc.Encoding.EncodeShape(shape, false)
+			s.estimator.CountPath(shape.PathElements(shapeTolerance), t, &style)
+			encodeResult = s.encoding.EncodeShape(shape, false)
 		} else {
 			// TODO: We currently collect the output of the dash iterator because
 			// `encode_path_elements` wants to consume the iterator. We want to avoid calling
@@ -120,16 +126,16 @@ func (sc *Scene) Stroke(
 			))
 			// We turn the iterator into a slice and then turn it into an
 			// iterator again to avoid doing the curve.Dash work twice.
-			sc.Estimator.CountPath(slices.Values(dashed), t, &style)
-			encodeResult = sc.Encoding.EncodePathElements(slices.Values(dashed), false)
+			s.estimator.CountPath(slices.Values(dashed), t, &style)
+			encodeResult = s.encoding.EncodePathElements(slices.Values(dashed), false)
 		}
 		if encodeResult {
 			if brushTransform != nil {
-				if sc.Encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(*brushTransform))) {
-					sc.Encoding.SwapLastPathTags()
+				if s.encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(*brushTransform))) {
+					s.encoding.SwapLastPathTags()
 				}
 			}
-			sc.Encoding.EncodeBrush(b, 1.0)
+			s.encoding.EncodeBrush(b, 1.0)
 		}
 	} else {
 		stroked := curve.StrokePath(
@@ -138,15 +144,15 @@ func (sc *Scene) Stroke(
 			curve.StrokeOpts{},
 			strokeTolerance,
 		)
-		sc.Fill(brush.NonZero, transform, b, brushTransform, &stroked)
+		s.Fill(brush.NonZero, transform, b, brushTransform, &stroked)
 	}
 }
 
-func (sc *Scene) Append(other *Scene, transform *curve.Affine) {
+func (s *Scene) Append(other *Scene, transform *curve.Affine) {
 	t := jmath.Identity
 	if transform != nil {
 		t = jmath.TransformFromKurbo(*transform)
 	}
-	sc.Encoding.Append(&other.Encoding, t)
-	sc.Estimator.Append(&other.Estimator, &t)
+	s.encoding.Append(&other.encoding, t)
+	s.estimator.Append(&other.estimator, &t)
 }
