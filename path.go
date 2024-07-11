@@ -19,83 +19,83 @@ type Style struct {
 
 const (
 	/// 0 for a fill, 1 for a stroke
-	FLAGS_STYLE_BIT uint32 = 0x8000_0000
+	flagsStyleBit uint32 = 0x8000_0000
 
 	/// 0 for non-zero, 1 for even-odd
-	FLAGS_FILL_BIT uint32 = 0x4000_0000
+	flagsFillBit uint32 = 0x4000_0000
 
 	/// Encodings for join style:
 	///    - 0b00 -> bevel
 	///    - 0b01 -> miter
 	///    - 0b10 -> round
-	FLAGS_JOIN_BITS_BEVEL uint32 = 0
-	FLAGS_JOIN_BITS_MITER uint32 = 0x1000_0000
-	FLAGS_JOIN_BITS_ROUND uint32 = 0x2000_0000
-	FLAGS_JOIN_MASK       uint32 = 0x3000_0000
+	flagsJoinBitsBevel uint32 = 0
+	flagsJoinBitsMiter uint32 = 0x1000_0000
+	flagsJoinBitsRound uint32 = 0x2000_0000
+	flagsJoinMask      uint32 = 0x3000_0000
 
 	/// Encodings for cap style:
 	///    - 0b00 -> butt
 	///    - 0b01 -> square
 	///    - 0b10 -> round
-	FLAGS_CAP_BITS_BUTT   uint32 = 0
-	FLAGS_CAP_BITS_SQUARE uint32 = 0x0100_0000
-	FLAGS_CAP_BITS_ROUND  uint32 = 0x0200_0000
+	flagsCapBitsButt   uint32 = 0
+	flagsCapBitsSquare uint32 = 0x0100_0000
+	flagsCapBitsRound  uint32 = 0x0200_0000
 
-	FLAGS_START_CAP_BITS_BUTT   uint32 = FLAGS_CAP_BITS_BUTT << 2
-	FLAGS_START_CAP_BITS_SQUARE uint32 = FLAGS_CAP_BITS_SQUARE << 2
-	FLAGS_START_CAP_BITS_ROUND  uint32 = FLAGS_CAP_BITS_ROUND << 2
-	FLAGS_END_CAP_BITS_BUTT     uint32 = FLAGS_CAP_BITS_BUTT
-	FLAGS_END_CAP_BITS_SQUARE   uint32 = FLAGS_CAP_BITS_SQUARE
-	FLAGS_END_CAP_BITS_ROUND    uint32 = FLAGS_CAP_BITS_ROUND
+	flagsStartCapBitsButt   uint32 = flagsCapBitsButt << 2
+	flagsStartCapBitsSquare uint32 = flagsCapBitsSquare << 2
+	flagsStartCapBitsRound  uint32 = flagsCapBitsRound << 2
+	flagsEndCapBitsButt     uint32 = flagsCapBitsButt
+	flagsEndCapBitsSquare   uint32 = flagsCapBitsSquare
+	flagsEndCapBitsRound    uint32 = flagsCapBitsRound
 
-	FLAGS_START_CAP_MASK uint32 = 0x0C00_0000
-	FLAGS_END_CAP_MASK   uint32 = 0x0300_0000
-	MITER_LIMIT_MASK     uint32 = 0xFFFF
+	flagsStartCapMask uint32 = 0x0C00_0000
+	flagsEndCapMask   uint32 = 0x0300_0000
+	miterLimitMask    uint32 = 0xFFFF
 )
 
 func StyleFromFill(fill brush.Fill) Style {
-	var fill_bit uint32
+	var fillBit uint32
 	if fill == brush.EvenOdd {
-		fill_bit = FLAGS_FILL_BIT
+		fillBit = flagsFillBit
 	}
 	return Style{
-		FlagsAndMiterLimits: fill_bit,
+		FlagsAndMiterLimits: fillBit,
 		LineWidth:           0,
 	}
 }
 
 func StyleFromStroke(stroke curve.Stroke) Style {
-	style := FLAGS_STYLE_BIT
+	style := flagsStyleBit
 	var join uint32
 	switch stroke.Join {
 	case curve.BevelJoin:
-		join = FLAGS_JOIN_BITS_BEVEL
+		join = flagsJoinBitsBevel
 	case curve.MiterJoin:
-		join = FLAGS_JOIN_BITS_MITER
+		join = flagsJoinBitsMiter
 	case curve.RoundJoin:
-		join = FLAGS_JOIN_BITS_ROUND
+		join = flagsJoinBitsRound
 	}
-	var start_cap uint32
+	var startCap uint32
 	switch stroke.StartCap {
 	case curve.ButtCap:
-		start_cap = FLAGS_START_CAP_BITS_BUTT
+		startCap = flagsStartCapBitsButt
 	case curve.SquareCap:
-		start_cap = FLAGS_START_CAP_BITS_SQUARE
+		startCap = flagsStartCapBitsSquare
 	case curve.RoundCap:
-		start_cap = FLAGS_START_CAP_BITS_ROUND
+		startCap = flagsStartCapBitsRound
 	}
-	var end_cap uint32
+	var endCap uint32
 	switch stroke.EndCap {
 	case curve.ButtCap:
-		end_cap = FLAGS_END_CAP_BITS_BUTT
+		endCap = flagsEndCapBitsButt
 	case curve.SquareCap:
-		end_cap = FLAGS_END_CAP_BITS_SQUARE
+		endCap = flagsEndCapBitsSquare
 	case curve.RoundCap:
-		end_cap = FLAGS_END_CAP_BITS_ROUND
+		endCap = flagsEndCapBitsRound
 	}
-	miter_limit := uint32(f32_to_f16(float32(stroke.MiterLimit)))
+	miterLimit := uint32(float16(float32(stroke.MiterLimit)))
 	return Style{
-		FlagsAndMiterLimits: style | join | start_cap | end_cap | miter_limit,
+		FlagsAndMiterLimits: style | join | startCap | endCap | miterLimit,
 		LineWidth:           float32(stroke.Width),
 	}
 }
@@ -103,9 +103,9 @@ func StyleFromStroke(stroke curve.Stroke) Style {
 type PathSegmentType uint8
 
 const (
-	LINE_TO  PathSegmentType = 0x1
-	QUAD_TO  PathSegmentType = 0x2
-	CUBIC_TO PathSegmentType = 0x3
+	PathSegmentTypeLineTo  PathSegmentType = 0x1
+	PathSegmentTypeQuadTo  PathSegmentType = 0x2
+	PathSegmentTypeCubicTo PathSegmentType = 0x3
 )
 
 type PathTag uint8
@@ -113,67 +113,69 @@ type PathTag uint8
 const (
 	/// 32-bit floating point line segment.
 	///
-	/// This is equivalent to `(PathSegmentType::LINE_TO | PathTag::F32_BIT)`.
-	LINE_TO_F32 PathTag = 0x9
+	/// This is equivalent to `(PathSegmentType::LineTo | PathTag::F32_BIT)`.
+	PathTagLineToF32 PathTag = 0x9
 
 	/// 32-bit floating point quadratic segment.
 	///
 	/// This is equivalent to `(PathSegmentType::QUAD_TO | PathTag::F32_BIT)`.
-	QUAD_TO_F32 PathTag = 0xa
+	PathTagQuadToF32 PathTag = 0xa
 
 	/// 32-bit floating point cubic segment.
 	///
 	/// This is equivalent to `(PathSegmentType::CUBIC_TO | PathTag::F32_BIT)`.
-	CUBIC_TO_F32 PathTag = 0xb
+	PathTagCubicToF32 PathTag = 0xb
 
 	/// 16-bit integral line segment.
-	LINE_TO_I16 PathTag = 0x1
+	PathTagLineToI16 PathTag = 0x1
 
 	/// 16-bit integral quadratic segment.
-	QUAD_TO_I16 PathTag = 0x2
+	PathTagQuadToI16 PathTag = 0x2
 
 	/// 16-bit integral cubic segment.
-	CUBIC_TO_I16 PathTag = 0x3
+	PathTagCubicToI16 PathTag = 0x3
 
 	/// Transform marker.
-	TRANSFORM PathTag = 0x20
+	PathTagTransform PathTag = 0x20
 
 	/// Path marker.
-	PATH PathTag = 0x10
+	PathTagPath PathTag = 0x10
 
 	/// Style setting.
-	STYLE PathTag = 0x40
+	PathTagStyle PathTag = 0x40
 
 	/// Bit that marks a segment that is the end of a subpath.
-	SUBPATH_END_BIT PathTag = 0x4
+	PathTagSubpathEndBit PathTag = 0x4
 
 	/// Bit for path segments that are represented as f32 values. If unset
 	/// they are represented as i16.
-	_F32_BIT PathTag = 0x8
+	PathTagF32Bit PathTag = 0x8
 
 	/// Mask for bottom 3 bits that contain the [`PathSegmentType`].
-	_SEGMENT_MASK PathTag = 0x3
+	PathTagSegmentMask PathTag = 0x3
 )
 
-func (tag PathTag) IsPathSegment() bool              { return tag.PathSegmentType() != 0 }
-func (tag PathTag) IsFloat32() bool                  { return tag&_F32_BIT != 0 }
-func (tag PathTag) IsSubpathEnd() bool               { return tag&SUBPATH_END_BIT != 0 }
-func (tag *PathTag) SetSubpathEnd()                  { *tag |= SUBPATH_END_BIT }
-func (tag PathTag) PathSegmentType() PathSegmentType { return PathSegmentType(tag & _SEGMENT_MASK) }
+func (tag PathTag) IsPathSegment() bool { return tag.PathSegmentType() != 0 }
+func (tag PathTag) IsFloat32() bool     { return tag&PathTagF32Bit != 0 }
+func (tag PathTag) IsSubpathEnd() bool  { return tag&PathTagSubpathEndBit != 0 }
+func (tag *PathTag) SetSubpathEnd()     { *tag |= PathTagSubpathEndBit }
+func (tag PathTag) PathSegmentType() PathSegmentType {
+	return PathSegmentType(tag & PathTagSegmentMask)
+}
 
 type PathMonoid struct {
 	_ structs.HostLayout
 
 	/// Index into transform stream.
-	Trans_ix uint32
+	TransIdx uint32
 	/// Path segment index.
-	Pathseg_ix uint32
+	PathSegIdx uint32
 	/// Offset into path segment stream.
-	Pathseg_offset uint32
+	PathSegOffset uint32
 	/// Index into style stream.
-	Style_ix uint32
+	StyleIdx uint32
 	/// Index of containing path.
-	Path_ix uint32
+	PathIdx uint32
 }
 
 type PathEncoder struct {
@@ -196,56 +198,56 @@ const (
 	PathStateNonemptySubpath
 )
 
-func (self *PathEncoder) lastPoint() ([2]float32, bool) {
-	n := len(*self.data)
+func (enc *PathEncoder) lastPoint() ([2]float32, bool) {
+	n := len(*enc.data)
 	if n < 8 {
 		return [2]float32{}, false
 	}
-	x := binary.LittleEndian.Uint32((*self.data)[n-8 : n-4])
-	y := binary.LittleEndian.Uint32((*self.data)[n-4 : n])
+	x := binary.LittleEndian.Uint32((*enc.data)[n-8 : n-4])
+	y := binary.LittleEndian.Uint32((*enc.data)[n-4 : n])
 	return [2]float32{math.Float32frombits(x), math.Float32frombits(y)}, true
 }
 
-func (self *PathEncoder) MoveTo(x, y float32) {
-	if self.isFill {
-		self.Close()
+func (enc *PathEncoder) MoveTo(x, y float32) {
+	if enc.isFill {
+		enc.Close()
 	}
-	if self.state == PathStateMoveTo {
-		*self.data = (*self.data)[:len(*self.data)-8]
-	} else if self.state == PathStateNonemptySubpath {
-		if !self.isFill {
-			self.insertStrokeCapMarkerSegment(false)
+	if enc.state == PathStateMoveTo {
+		*enc.data = (*enc.data)[:len(*enc.data)-8]
+	} else if enc.state == PathStateNonemptySubpath {
+		if !enc.isFill {
+			enc.insertStrokeCapMarkerSegment(false)
 		}
-		if len(*self.tags) != 0 {
-			(*self.tags)[len(*self.tags)-1].SetSubpathEnd()
+		if len(*enc.tags) != 0 {
+			(*enc.tags)[len(*enc.tags)-1].SetSubpathEnd()
 		}
 	}
-	self.firstPoint = [2]float32{x, y}
+	enc.firstPoint = [2]float32{x, y}
 	var bytes [8]byte
 	binary.LittleEndian.PutUint32(bytes[0:], math.Float32bits(x))
 	binary.LittleEndian.PutUint32(bytes[4:], math.Float32bits(y))
-	*self.data = append(*self.data, bytes[:]...)
-	self.state = PathStateMoveTo
+	*enc.data = append(*enc.data, bytes[:]...)
+	enc.state = PathStateMoveTo
 }
 
-func (self *PathEncoder) isZeroLengthSegment(p1 [2]float32, p2_, p3_ option[[2]float32]) bool {
-	p0, ok := self.lastPoint()
+func (enc *PathEncoder) isZeroLengthSegment(p1 [2]float32, p2_, p3_ option[[2]float32]) bool {
+	p0, ok := enc.lastPoint()
 	if !ok {
 		panic("unreachable")
 	}
 	p2 := p2_.unwrapOr(p1)
 	p3 := p3_.unwrapOr(p1)
 
-	x_min := min(p0[0], p1[0], p2[0], p3[0])
-	x_max := max(p0[0], p1[0], p2[0], p3[0])
-	y_min := min(p0[1], p1[1], p2[1], p3[1])
-	y_max := max(p0[1], p1[1], p2[1], p3[1])
+	xMin := min(p0[0], p1[0], p2[0], p3[0])
+	xMax := max(p0[0], p1[0], p2[0], p3[0])
+	yMin := min(p0[1], p1[1], p2[1], p3[1])
+	yMax := max(p0[1], p1[1], p2[1], p3[1])
 
-	return !(x_max-x_min > epsilon || y_max-y_min > epsilon)
+	return !(xMax-xMin > epsilon || yMax-yMin > epsilon)
 }
 
-func (self *PathEncoder) startTangentForCurve(p1 [2]float32, p2_, p3_ option[[2]float32]) ([2]float32, bool) {
-	p0 := [2]float32{self.firstPoint[0], self.firstPoint[1]}
+func (enc *PathEncoder) startTangentForCurve(p1 [2]float32, p2_, p3_ option[[2]float32]) ([2]float32, bool) {
+	p0 := [2]float32{enc.firstPoint[0], enc.firstPoint[1]}
 	p2 := p2_.unwrapOr(p0)
 	p3 := p3_.unwrapOr(p0)
 	if abs32(p1[0]-p0[0]) > epsilon || abs32(p1[1]-p0[1]) > epsilon {
@@ -259,59 +261,59 @@ func (self *PathEncoder) startTangentForCurve(p1 [2]float32, p2_, p3_ option[[2]
 	}
 }
 
-func (self *PathEncoder) LineTo(x, y float32) {
-	if self.state == PathStateStart {
-		if self.numEncodedSegments == 0 {
+func (enc *PathEncoder) LineTo(x, y float32) {
+	if enc.state == PathStateStart {
+		if enc.numEncodedSegments == 0 {
 			// This copies the behavior of kurbo which treats an initial line, quad
 			// or curve as a move.
-			self.MoveTo(x, y)
+			enc.MoveTo(x, y)
 			return
 		}
-		self.MoveTo(self.firstPoint[0], self.firstPoint[1])
+		enc.MoveTo(enc.firstPoint[0], enc.firstPoint[1])
 	}
-	if self.state == PathStateMoveTo {
+	if enc.state == PathStateMoveTo {
 		// Ensure that we don't end up with a zero-length start tangent.
-		if pt, ok := self.startTangentForCurve(
+		if pt, ok := enc.startTangentForCurve(
 			[2]float32{x, y},
 			option[[2]float32]{},
 			option[[2]float32]{},
 		); ok {
-			self.firstStartTangentEnd = pt
+			enc.firstStartTangentEnd = pt
 		} else {
 			return
 		}
 	}
 	// Drop the segment if its length is zero
-	if self.isZeroLengthSegment([2]float32{x, y}, option[[2]float32]{}, option[[2]float32]{}) {
+	if enc.isZeroLengthSegment([2]float32{x, y}, option[[2]float32]{}, option[[2]float32]{}) {
 		return
 	}
 	var bytes [8]byte
 	binary.LittleEndian.PutUint32(bytes[0:], math.Float32bits(x))
 	binary.LittleEndian.PutUint32(bytes[4:], math.Float32bits(y))
-	*self.data = append(*self.data, bytes[:]...)
-	*self.tags = append(*self.tags, LINE_TO_F32)
-	self.state = PathStateNonemptySubpath
-	self.numEncodedSegments++
+	*enc.data = append(*enc.data, bytes[:]...)
+	*enc.tags = append(*enc.tags, PathTagLineToF32)
+	enc.state = PathStateNonemptySubpath
+	enc.numEncodedSegments++
 }
 
-func (self *PathEncoder) QuadTo(x1, y1, x2, y2 float32) {
-	if self.state == PathStateStart {
-		if self.numEncodedSegments == 0 {
-			self.MoveTo(x2, y2)
+func (enc *PathEncoder) QuadTo(x1, y1, x2, y2 float32) {
+	if enc.state == PathStateStart {
+		if enc.numEncodedSegments == 0 {
+			enc.MoveTo(x2, y2)
 			return
 		}
-		self.MoveTo(self.firstPoint[0], self.firstPoint[1])
+		enc.MoveTo(enc.firstPoint[0], enc.firstPoint[1])
 	}
-	if self.state == PathStateMoveTo {
+	if enc.state == PathStateMoveTo {
 		// Ensure that we don't end up with a zero-length start tangent.
-		xy, ok := self.startTangentForCurve([2]float32{x1, y1}, some([2]float32{x2, y2}), option[[2]float32]{})
+		xy, ok := enc.startTangentForCurve([2]float32{x1, y1}, some([2]float32{x2, y2}), option[[2]float32]{})
 		if !ok {
 			return
 		}
-		self.firstStartTangentEnd = xy
+		enc.firstStartTangentEnd = xy
 	}
 	// Drop the segment if its length is zero
-	if self.isZeroLengthSegment([2]float32{x1, y1}, some([2]float32{x2, y2}), option[[2]float32]{}) {
+	if enc.isZeroLengthSegment([2]float32{x1, y1}, some([2]float32{x2, y2}), option[[2]float32]{}) {
 		return
 	}
 	var buf [16]byte
@@ -319,30 +321,30 @@ func (self *PathEncoder) QuadTo(x1, y1, x2, y2 float32) {
 	binary.LittleEndian.PutUint32(buf[4:], math.Float32bits(y1))
 	binary.LittleEndian.PutUint32(buf[8:], math.Float32bits(x2))
 	binary.LittleEndian.PutUint32(buf[12:], math.Float32bits(y2))
-	*self.data = append(*self.data, buf[:]...)
-	*self.tags = append(*self.tags, QUAD_TO_F32)
-	self.state = PathStateNonemptySubpath
-	self.numEncodedSegments++
+	*enc.data = append(*enc.data, buf[:]...)
+	*enc.tags = append(*enc.tags, PathTagQuadToF32)
+	enc.state = PathStateNonemptySubpath
+	enc.numEncodedSegments++
 }
 
-func (self *PathEncoder) CubicTo(x1, y1, x2, y2, x3, y3 float32) {
-	if self.state == PathStateStart {
-		if self.numEncodedSegments == 0 {
-			self.MoveTo(x3, y3)
+func (enc *PathEncoder) CubicTo(x1, y1, x2, y2, x3, y3 float32) {
+	if enc.state == PathStateStart {
+		if enc.numEncodedSegments == 0 {
+			enc.MoveTo(x3, y3)
 			return
 		}
-		self.MoveTo(self.firstPoint[0], self.firstPoint[1])
+		enc.MoveTo(enc.firstPoint[0], enc.firstPoint[1])
 	}
-	if self.state == PathStateMoveTo {
+	if enc.state == PathStateMoveTo {
 		// Ensure that we don't end up with a zero-length start tangent.
-		xy, ok := self.startTangentForCurve([2]float32{x1, y1}, some([2]float32{x2, y2}), some([2]float32{x3, y3}))
+		xy, ok := enc.startTangentForCurve([2]float32{x1, y1}, some([2]float32{x2, y2}), some([2]float32{x3, y3}))
 		if !ok {
 			return
 		}
-		self.firstStartTangentEnd = xy
+		enc.firstStartTangentEnd = xy
 	}
 	// Drop the segment if its length is zero
-	if self.isZeroLengthSegment([2]float32{x1, y1}, some([2]float32{x2, y2}), some([2]float32{x3, y3})) {
+	if enc.isZeroLengthSegment([2]float32{x1, y1}, some([2]float32{x2, y2}), some([2]float32{x3, y3})) {
 		return
 	}
 	var buf [24]byte
@@ -352,62 +354,62 @@ func (self *PathEncoder) CubicTo(x1, y1, x2, y2, x3, y3 float32) {
 	binary.LittleEndian.PutUint32(buf[12:], math.Float32bits(y2))
 	binary.LittleEndian.PutUint32(buf[16:], math.Float32bits(x3))
 	binary.LittleEndian.PutUint32(buf[20:], math.Float32bits(y3))
-	*self.data = append(*self.data, buf[:]...)
-	*self.tags = append(*self.tags, CUBIC_TO_F32)
-	self.state = PathStateNonemptySubpath
-	self.numEncodedSegments++
+	*enc.data = append(*enc.data, buf[:]...)
+	*enc.tags = append(*enc.tags, PathTagCubicToF32)
+	enc.state = PathStateNonemptySubpath
+	enc.numEncodedSegments++
 }
 
-func (self *PathEncoder) Close() {
-	switch self.state {
+func (enc *PathEncoder) Close() {
+	switch enc.state {
 	case PathStateStart:
 		return
 	case PathStateMoveTo:
-		*self.data = (*self.data)[:len(*self.data)-8]
-		self.state = PathStateStart
+		*enc.data = (*enc.data)[:len(*enc.data)-8]
+		enc.state = PathStateStart
 		return
 	}
-	if len(*self.data) < 8 {
+	if len(*enc.data) < 8 {
 		// can't happen
 		return
 	}
-	var first_bytes [8]byte
-	binary.LittleEndian.PutUint32(first_bytes[0:], math.Float32bits(self.firstPoint[0]))
-	binary.LittleEndian.PutUint32(first_bytes[4:], math.Float32bits(self.firstPoint[1]))
-	if ([8]byte)((*self.data)[len(*self.data)-8:]) != first_bytes {
-		*self.data = append(*self.data, first_bytes[:]...)
-		*self.tags = append(*self.tags, LINE_TO_F32)
-		self.numEncodedSegments++
+	var firstBytes [8]byte
+	binary.LittleEndian.PutUint32(firstBytes[0:], math.Float32bits(enc.firstPoint[0]))
+	binary.LittleEndian.PutUint32(firstBytes[4:], math.Float32bits(enc.firstPoint[1]))
+	if ([8]byte)((*enc.data)[len(*enc.data)-8:]) != firstBytes {
+		*enc.data = append(*enc.data, firstBytes[:]...)
+		*enc.tags = append(*enc.tags, PathTagLineToF32)
+		enc.numEncodedSegments++
 	}
-	if !self.isFill {
-		self.insertStrokeCapMarkerSegment(true)
+	if !enc.isFill {
+		enc.insertStrokeCapMarkerSegment(true)
 	}
-	if len(*self.tags) > 0 {
-		(*self.tags)[len(*self.tags)-1].SetSubpathEnd()
+	if len(*enc.tags) > 0 {
+		(*enc.tags)[len(*enc.tags)-1].SetSubpathEnd()
 	}
-	self.state = PathStateStart
+	enc.state = PathStateStart
 }
 
-func (self *PathEncoder) Shape(shape curve.Shape) {
-	self.PathElements(shape.PathElements(0.1))
+func (enc *PathEncoder) Shape(shape curve.Shape) {
+	enc.PathElements(shape.PathElements(0.1))
 }
 
-func (self *PathEncoder) PathElements(path iter.Seq[curve.PathElement]) {
+func (enc *PathEncoder) PathElements(path iter.Seq[curve.PathElement]) {
 	for el := range path {
 		switch el.Kind {
 		case curve.MoveToKind:
-			self.MoveTo(float32(el.P0.X), float32(el.P0.Y))
+			enc.MoveTo(float32(el.P0.X), float32(el.P0.Y))
 		case curve.LineToKind:
-			self.LineTo(float32(el.P0.X), float32(el.P0.Y))
+			enc.LineTo(float32(el.P0.X), float32(el.P0.Y))
 		case curve.QuadToKind:
 			p0 := el.P0
 			p1 := el.P1
-			self.QuadTo(float32(p0.X), float32(p0.Y), float32(p1.X), float32(p1.Y))
+			enc.QuadTo(float32(p0.X), float32(p0.Y), float32(p1.X), float32(p1.Y))
 		case curve.CubicToKind:
 			p0 := el.P0
 			p1 := el.P1
 			p2 := el.P2
-			self.CubicTo(
+			enc.CubicTo(
 				float32(p0.X),
 				float32(p0.Y),
 				float32(p1.X),
@@ -416,55 +418,55 @@ func (self *PathEncoder) PathElements(path iter.Seq[curve.PathElement]) {
 				float32(p2.Y),
 			)
 		case curve.ClosePathKind:
-			self.Close()
+			enc.Close()
 		}
 	}
 }
 
-func (self *PathEncoder) Finish(insertPathMarker bool) uint32 {
-	if self.isFill {
-		self.Close()
+func (enc *PathEncoder) Finish(insertPathMarker bool) uint32 {
+	if enc.isFill {
+		enc.Close()
 	}
-	if self.state == PathStateMoveTo {
-		*self.data = (*self.data)[:len(*self.data)-8]
+	if enc.state == PathStateMoveTo {
+		*enc.data = (*enc.data)[:len(*enc.data)-8]
 	}
-	if self.numEncodedSegments != 0 {
-		if !self.isFill && self.state == PathStateNonemptySubpath {
-			self.insertStrokeCapMarkerSegment(false)
+	if enc.numEncodedSegments != 0 {
+		if !enc.isFill && enc.state == PathStateNonemptySubpath {
+			enc.insertStrokeCapMarkerSegment(false)
 		}
-		if len(*self.tags) > 0 {
-			(*self.tags)[len(*self.tags)-1].SetSubpathEnd()
+		if len(*enc.tags) > 0 {
+			(*enc.tags)[len(*enc.tags)-1].SetSubpathEnd()
 		}
-		*self.numSegments += self.numEncodedSegments
+		*enc.numSegments += enc.numEncodedSegments
 		if insertPathMarker {
-			*self.tags = append(*self.tags, PATH)
-			*self.numPaths += 1
+			*enc.tags = append(*enc.tags, PathTagPath)
+			*enc.numPaths += 1
 		}
 	}
-	return self.numEncodedSegments
+	return enc.numEncodedSegments
 }
 
-func (self *PathEncoder) insertStrokeCapMarkerSegment(isClosed bool) {
-	if self.isFill {
+func (enc *PathEncoder) insertStrokeCapMarkerSegment(isClosed bool) {
+	if enc.isFill {
 		panic("invalid state")
 	}
-	if self.state != PathStateNonemptySubpath {
+	if enc.state != PathStateNonemptySubpath {
 		panic("invalid state")
 	}
 	if isClosed {
 		// We expect that the most recently encoded pair of coordinates in the path data stream
 		// contain the first control point in the path segment (see `PathEncoder::close`).
 		// Hence a line-to encoded here should embed the subpath's start tangent.
-		self.LineTo(
-			self.firstStartTangentEnd[0],
-			self.firstStartTangentEnd[1],
+		enc.LineTo(
+			enc.firstStartTangentEnd[0],
+			enc.firstStartTangentEnd[1],
 		)
 	} else {
-		self.QuadTo(
-			self.firstPoint[0],
-			self.firstPoint[1],
-			self.firstStartTangentEnd[0],
-			self.firstStartTangentEnd[1],
+		enc.QuadTo(
+			enc.firstPoint[0],
+			enc.firstPoint[1],
+			enc.firstStartTangentEnd[0],
+			enc.firstStartTangentEnd[1],
 		)
 	}
 }
@@ -521,7 +523,7 @@ type PathBbox struct {
 	/// Maximum y value.
 	Y1 int32
 	/// Style flags
-	Draw_flags uint32
+	DrawFlags uint32
 	/// Index into the transform stream.
-	Trans_ix uint32
+	TransIdx uint32
 }

@@ -8,12 +8,12 @@ import (
 	"honnef.co/go/brush"
 )
 
-const PATH_REDUCE_WG = 256
-const PATH_BBOX_WG = 256
-const FLATTEN_WG = 256
-const TILE_WIDTH = 16
-const TILE_HEIGHT = 16
-const CLIP_REDUCE_WG = 256
+const pathReduceWg = 256
+const pathBboxWg = 256
+const flattenWg = 256
+const tileWidth = 16
+const tileHeight = 16
+const clipReduceWg = 256
 
 type BumpAllocators struct {
 	_ structs.HostLayout
@@ -32,23 +32,23 @@ func (ba *BumpAllocators) Memory() BumpAllocatorMemory {
 	binning := NewBufferSize[uint32](ba.Binning)
 	ptcl := NewBufferSize[uint32](ba.Ptcl)
 	tile := NewBufferSize[Tile](ba.Tile)
-	seg_counts := NewBufferSize[SegmentCount](ba.SegCounts)
+	segCounts := NewBufferSize[SegmentCount](ba.SegCounts)
 	segments := NewBufferSize[PathSegment](ba.Segments)
 	lines := NewBufferSize[LineSoup](ba.Lines)
 
-	total := binning.size_in_bytes() +
-		ptcl.size_in_bytes() +
-		tile.size_in_bytes() +
-		seg_counts.size_in_bytes() +
-		segments.size_in_bytes() +
-		lines.size_in_bytes()
+	total := binning.sizeInBytes() +
+		ptcl.sizeInBytes() +
+		tile.sizeInBytes() +
+		segCounts.sizeInBytes() +
+		segments.sizeInBytes() +
+		lines.sizeInBytes()
 
 	return BumpAllocatorMemory{
 		Total:     total,
 		Binning:   binning,
 		Ptcl:      ptcl,
 		Tile:      tile,
-		SegCounts: seg_counts,
+		SegCounts: segCounts,
 		Segments:  segments,
 		Lines:     lines,
 	}
@@ -60,7 +60,7 @@ func NewBufferSize[T any](x uint32) BufferSize[T] {
 	return BufferSize[T](max(x, 1))
 }
 
-func (s BufferSize[T]) size_in_bytes() uint32 {
+func (s BufferSize[T]) sizeInBytes() uint32 {
 	// XXX can we avoid using unsafe for this?
 	return uint32(s) * uint32(unsafe.Sizeof(*new(T)))
 }
@@ -85,10 +85,10 @@ type WorkgroupSize [3]uint32
 type IndirectCount struct {
 	_ structs.HostLayout
 
-	Count_x uint32
-	Count_y uint32
-	Count_z uint32
-	_       uint32
+	X uint32
+	Y uint32
+	Z uint32
+	_ uint32 // padding
 }
 
 // / Uniform render configuration data used by all GPU stages.
@@ -125,196 +125,196 @@ type ConfigUniform struct {
 }
 
 type RenderConfig struct {
-	gpu              ConfigUniform
-	workgroup_counts WorkgroupCounts
-	buffer_sizes     BufferSizes
+	gpu             ConfigUniform
+	workgroupCounts WorkgroupCounts
+	bufferSizes     BufferSizes
 }
 
 func NewRenderConfig(layout *Layout, width, height uint32, baseColor brush.Color) RenderConfig {
-	new_width := next_multiple_of(width, TILE_WIDTH)
-	new_height := next_multiple_of(height, TILE_HEIGHT)
-	width_in_tiles := new_width / TILE_WIDTH
-	height_in_tiles := new_height / TILE_HEIGHT
-	n_path_tags := layout.path_tags_size()
-	workgroup_counts := NewWorkgroupCounts(layout, width_in_tiles, height_in_tiles, n_path_tags)
-	buffer_sizes := NewBufferSizes(layout, &workgroup_counts)
+	newWidth := nextMultipleOf(width, tileWidth)
+	newHeight := nextMultipleOf(height, tileHeight)
+	widthInTiles := newWidth / tileWidth
+	heightInTiles := newHeight / tileHeight
+	numPathTags := layout.pathTagsSize()
+	workgroupCounts := NewWorkgroupCounts(layout, widthInTiles, heightInTiles, numPathTags)
+	bufferSizes := NewBufferSizes(layout, &workgroupCounts)
 	return RenderConfig{
 		gpu: ConfigUniform{
-			WidthInTiles:  width_in_tiles,
-			HeightInTiles: height_in_tiles,
+			WidthInTiles:  widthInTiles,
+			HeightInTiles: heightInTiles,
 			TargetWidth:   width,
 			TargetHeight:  height,
 			BaseColor:     baseColor.PremulUint32(),
-			LinesSize:     uint32(buffer_sizes.Lines),
-			BinningSize:   uint32(buffer_sizes.Bin_data) - layout.bin_data_start,
-			TilesSize:     uint32(buffer_sizes.Tiles),
-			SegCountsSize: uint32(buffer_sizes.Seg_counts),
-			SegmentsSize:  uint32(buffer_sizes.Segments),
-			PtclSize:      uint32(buffer_sizes.Ptcl),
+			LinesSize:     uint32(bufferSizes.Lines),
+			BinningSize:   uint32(bufferSizes.BinData) - layout.BinDataStart,
+			TilesSize:     uint32(bufferSizes.Tiles),
+			SegCountsSize: uint32(bufferSizes.SegCounts),
+			SegmentsSize:  uint32(bufferSizes.Segments),
+			PtclSize:      uint32(bufferSizes.Ptcl),
 			Layout:        *layout,
 		},
-		workgroup_counts: workgroup_counts,
-		buffer_sizes:     buffer_sizes,
+		workgroupCounts: workgroupCounts,
+		bufferSizes:     bufferSizes,
 	}
 }
 
 type BufferSizes struct {
 	// Known size buffers
-	Path_reduced      BufferSize[PathMonoid]
-	Path_reduced2     BufferSize[PathMonoid]
-	Path_reduced_scan BufferSize[PathMonoid]
-	Path_monoids      BufferSize[PathMonoid]
-	Path_bboxes       BufferSize[PathBbox]
-	Draw_reduced      BufferSize[DrawMonoid]
-	Draw_monoids      BufferSize[DrawMonoid]
-	Info              BufferSize[uint32]
-	Clip_inps         BufferSize[Clip]
-	Clip_els          BufferSize[ClipElement]
-	Clip_bics         BufferSize[ClipBic]
-	Clip_bboxes       BufferSize[ClipBbox]
-	Draw_bboxes       BufferSize[DrawBbox]
-	Bump_alloc        BufferSize[BumpAllocators]
-	Indirect_count    BufferSize[IndirectCount]
-	Bin_headers       BufferSize[BinHeader]
-	Paths             BufferSize[Path]
+	PathReduced     BufferSize[PathMonoid]
+	PathReduced2    BufferSize[PathMonoid]
+	PathReducedScan BufferSize[PathMonoid]
+	PathMonoids     BufferSize[PathMonoid]
+	PathBboxes      BufferSize[PathBbox]
+	DrawReduced     BufferSize[DrawMonoid]
+	DrawMonoids     BufferSize[DrawMonoid]
+	Info            BufferSize[uint32]
+	ClipInps        BufferSize[Clip]
+	ClipEls         BufferSize[ClipElement]
+	ClipBics        BufferSize[ClipBic]
+	ClipBboxes      BufferSize[ClipBbox]
+	DrawBboxes      BufferSize[DrawBbox]
+	BumpAlloc       BufferSize[BumpAllocators]
+	IndirectCount   BufferSize[IndirectCount]
+	BinHeaders      BufferSize[BinHeader]
+	Paths           BufferSize[Path]
 	// Bump allocated buffers
-	Lines      BufferSize[LineSoup]
-	Bin_data   BufferSize[uint32]
-	Tiles      BufferSize[Tile]
-	Seg_counts BufferSize[SegmentCount]
-	Segments   BufferSize[PathSegment]
-	Ptcl       BufferSize[uint32]
+	Lines     BufferSize[LineSoup]
+	BinData   BufferSize[uint32]
+	Tiles     BufferSize[Tile]
+	SegCounts BufferSize[SegmentCount]
+	Segments  BufferSize[PathSegment]
+	Ptcl      BufferSize[uint32]
 }
 
 func NewBufferSizes(layout *Layout, workgroups *WorkgroupCounts) BufferSizes {
-	n_paths := layout.n_paths
-	n_draw_objects := layout.n_draw_objects
-	n_clips := layout.n_clips
-	path_tag_wgs := workgroups.Path_reduce[0]
-	var reduced_size uint32
-	if workgroups.Use_large_path_scan {
-		reduced_size = align_upu32(path_tag_wgs, PATH_REDUCE_WG)
+	numPaths := layout.NumPaths
+	numDrawObjects := layout.NumDrawObjects
+	numClips := layout.NumClips
+	pathTagWgs := workgroups.PathReduce[0]
+	var reducedSize uint32
+	if workgroups.UseLargePathScan {
+		reducedSize = alignUpU32(pathTagWgs, pathReduceWg)
 	} else {
-		reduced_size = path_tag_wgs
+		reducedSize = pathTagWgs
 	}
-	draw_monoid_wgs := workgroups.Draw_reduce[0]
+	drawMonoidWgs := workgroups.DrawReduce[0]
 
-	binning_wgs := workgroups.Binning[0]
-	n_paths_aligned := align_upu32(n_paths, 256)
+	binningWgs := workgroups.Binning[0]
+	numPathsALigned := alignUpU32(numPaths, 256)
 
 	// The following buffer sizes have been hand picked to accommodate the vello test scenes as
 	// well as paris-30k. These should instead get derived from the scene layout using
 	// reasonable heuristics.
-	bin_data := NewBufferSize[uint32](1 << 18)
+	binData := NewBufferSize[uint32](1 << 18)
 	tiles := NewBufferSize[Tile](1 << 21)
 	lines := NewBufferSize[LineSoup](1 << 21)
-	seg_counts := NewBufferSize[SegmentCount](1 << 21)
+	segCounts := NewBufferSize[SegmentCount](1 << 21)
 	segments := NewBufferSize[PathSegment](1 << 21)
 	ptcl := NewBufferSize[uint32](1 << 23)
 	return BufferSizes{
-		Path_reduced:      NewBufferSize[PathMonoid](reduced_size),
-		Path_reduced2:     NewBufferSize[PathMonoid](PATH_REDUCE_WG),
-		Path_reduced_scan: NewBufferSize[PathMonoid](reduced_size),
-		Path_monoids:      NewBufferSize[PathMonoid](path_tag_wgs * PATH_REDUCE_WG),
-		Path_bboxes:       NewBufferSize[PathBbox](n_paths),
-		Draw_reduced:      NewBufferSize[DrawMonoid](draw_monoid_wgs),
-		Draw_monoids:      NewBufferSize[DrawMonoid](n_draw_objects),
-		Info:              NewBufferSize[uint32](layout.bin_data_start),
-		Clip_inps:         NewBufferSize[Clip](n_clips),
-		Clip_els:          NewBufferSize[ClipElement](n_clips),
-		Clip_bics:         NewBufferSize[ClipBic](n_clips / CLIP_REDUCE_WG),
-		Clip_bboxes:       NewBufferSize[ClipBbox](n_clips),
-		Draw_bboxes:       NewBufferSize[DrawBbox](n_paths),
-		Bump_alloc:        NewBufferSize[BumpAllocators](1),
-		Indirect_count:    NewBufferSize[IndirectCount](1),
-		Bin_headers:       NewBufferSize[BinHeader](binning_wgs * 256),
-		Paths:             NewBufferSize[Path](n_paths_aligned),
+		PathReduced:     NewBufferSize[PathMonoid](reducedSize),
+		PathReduced2:    NewBufferSize[PathMonoid](pathReduceWg),
+		PathReducedScan: NewBufferSize[PathMonoid](reducedSize),
+		PathMonoids:     NewBufferSize[PathMonoid](pathTagWgs * pathReduceWg),
+		PathBboxes:      NewBufferSize[PathBbox](numPaths),
+		DrawReduced:     NewBufferSize[DrawMonoid](drawMonoidWgs),
+		DrawMonoids:     NewBufferSize[DrawMonoid](numDrawObjects),
+		Info:            NewBufferSize[uint32](layout.BinDataStart),
+		ClipInps:        NewBufferSize[Clip](numClips),
+		ClipEls:         NewBufferSize[ClipElement](numClips),
+		ClipBics:        NewBufferSize[ClipBic](numClips / clipReduceWg),
+		ClipBboxes:      NewBufferSize[ClipBbox](numClips),
+		DrawBboxes:      NewBufferSize[DrawBbox](numPaths),
+		BumpAlloc:       NewBufferSize[BumpAllocators](1),
+		IndirectCount:   NewBufferSize[IndirectCount](1),
+		BinHeaders:      NewBufferSize[BinHeader](binningWgs * 256),
+		Paths:           NewBufferSize[Path](numPathsALigned),
 
-		Lines:      lines,
-		Bin_data:   bin_data,
-		Tiles:      tiles,
-		Seg_counts: seg_counts,
-		Segments:   segments,
-		Ptcl:       ptcl,
+		Lines:     lines,
+		BinData:   binData,
+		Tiles:     tiles,
+		SegCounts: segCounts,
+		Segments:  segments,
+		Ptcl:      ptcl,
 	}
 }
 
 type WorkgroupCounts struct {
-	Use_large_path_scan bool
-	Path_reduce         WorkgroupSize
-	Path_reduce2        WorkgroupSize
-	Path_scan1          WorkgroupSize
-	Path_scan           WorkgroupSize
-	Bbox_clear          WorkgroupSize
-	Flatten             WorkgroupSize
-	Draw_reduce         WorkgroupSize
-	Draw_leaf           WorkgroupSize
-	Clip_reduce         WorkgroupSize
-	Clip_leaf           WorkgroupSize
-	Binning             WorkgroupSize
-	Tile_alloc          WorkgroupSize
-	Path_count_setup    WorkgroupSize
-	// Note `path_count` must use an indirect dispatch
-	Backdrop          WorkgroupSize
-	Coarse            WorkgroupSize
-	Path_tiling_setup WorkgroupSize
-	// Note `path_tiling` must use an indirect dispatch
+	UseLargePathScan bool
+	PathReduce       WorkgroupSize
+	PathReduce2      WorkgroupSize
+	PathScan1        WorkgroupSize
+	PathScan         WorkgroupSize
+	BboxClear        WorkgroupSize
+	Flatten          WorkgroupSize
+	DrawReduce       WorkgroupSize
+	DrawLeaf         WorkgroupSize
+	ClipReduce       WorkgroupSize
+	ClipLeaf         WorkgroupSize
+	Binning          WorkgroupSize
+	TileAlloc        WorkgroupSize
+	PathCountSetup   WorkgroupSize
+	// Note `pathCount` must use an indirect dispatch
+	Backdrop        WorkgroupSize
+	Coarse          WorkgroupSize
+	PathTilingSetup WorkgroupSize
+	// Note `pathTiling` must use an indirect dispatch
 	Fine WorkgroupSize
 }
 
 func NewWorkgroupCounts(
 	layout *Layout,
-	width_in_tiles uint32,
-	height_in_tiles uint32,
-	n_path_tags uint32,
+	widthInTiles uint32,
+	heightInTiles uint32,
+	numPathTags uint32,
 ) WorkgroupCounts {
-	n_paths := layout.n_paths
-	n_draw_objects := layout.n_draw_objects
-	n_clips := layout.n_clips
-	path_tag_padded := align_upu32(n_path_tags, 4*PATH_REDUCE_WG)
-	path_tag_wgs := path_tag_padded / (4 * PATH_REDUCE_WG)
-	use_large_path_scan := path_tag_wgs > PATH_REDUCE_WG
-	var reduced_size uint32
-	if use_large_path_scan {
-		reduced_size = align_upu32(path_tag_wgs, PATH_REDUCE_WG)
+	numPaths := layout.NumPaths
+	numDrawObjects := layout.NumDrawObjects
+	numClips := layout.NumClips
+	pathTagPadded := alignUpU32(numPathTags, 4*pathReduceWg)
+	pathTagWgs := pathTagPadded / (4 * pathReduceWg)
+	useLargePathScan := pathTagWgs > pathReduceWg
+	var reducedSize uint32
+	if useLargePathScan {
+		reducedSize = alignUpU32(pathTagWgs, pathReduceWg)
 	} else {
-		reduced_size = path_tag_wgs
+		reducedSize = pathTagWgs
 	}
-	draw_object_wgs := (n_draw_objects + PATH_BBOX_WG - 1) / PATH_BBOX_WG
-	draw_monoid_wgs := min(draw_object_wgs, PATH_BBOX_WG)
-	flatten_wgs := (n_path_tags + FLATTEN_WG - 1) / FLATTEN_WG
-	n_clips_minus_one := n_clips
-	if n_clips > 0 {
-		n_clips_minus_one--
+	drawObjectWgs := (numDrawObjects + pathBboxWg - 1) / pathBboxWg
+	drawMonoidWgs := min(drawObjectWgs, pathBboxWg)
+	flattenWgs := (numPathTags + flattenWg - 1) / flattenWg
+	numClipsMinusOne := numClips
+	if numClips > 0 {
+		numClipsMinusOne--
 	}
-	clip_reduce_wgs := n_clips_minus_one / CLIP_REDUCE_WG
-	clip_wgs := (n_clips + CLIP_REDUCE_WG - 1) / CLIP_REDUCE_WG
-	path_wgs := (n_paths + PATH_BBOX_WG - 1) / PATH_BBOX_WG
-	width_in_bins := (width_in_tiles + 15) / 16
-	height_in_bins := (height_in_tiles + 15) / 16
+	clipReduceWgs := numClipsMinusOne / clipReduceWg
+	clipWgs := (numClips + clipReduceWg - 1) / clipReduceWg
+	pathWgs := (numPaths + pathBboxWg - 1) / pathBboxWg
+	widthInBins := (widthInTiles + 15) / 16
+	heightInBins := (heightInTiles + 15) / 16
 	return WorkgroupCounts{
-		Use_large_path_scan: use_large_path_scan,
-		Path_reduce:         [3]uint32{path_tag_wgs, 1, 1},
-		Path_reduce2:        [3]uint32{PATH_REDUCE_WG, 1, 1},
-		Path_scan1:          [3]uint32{reduced_size / PATH_REDUCE_WG, 1, 1},
-		Path_scan:           [3]uint32{path_tag_wgs, 1, 1},
-		Bbox_clear:          [3]uint32{draw_object_wgs, 1, 1},
-		Flatten:             [3]uint32{flatten_wgs, 1, 1},
-		Draw_reduce:         [3]uint32{draw_monoid_wgs, 1, 1},
-		Draw_leaf:           [3]uint32{draw_monoid_wgs, 1, 1},
-		Clip_reduce:         [3]uint32{clip_reduce_wgs, 1, 1},
-		Clip_leaf:           [3]uint32{clip_wgs, 1, 1},
-		Binning:             [3]uint32{draw_object_wgs, 1, 1},
-		Tile_alloc:          [3]uint32{path_wgs, 1, 1},
-		Path_count_setup:    [3]uint32{1, 1, 1},
-		Backdrop:            [3]uint32{path_wgs, 1, 1},
-		Coarse:              [3]uint32{width_in_bins, height_in_bins, 1},
-		Path_tiling_setup:   [3]uint32{1, 1, 1},
-		Fine:                [3]uint32{width_in_tiles, height_in_tiles, 1},
+		UseLargePathScan: useLargePathScan,
+		PathReduce:       [3]uint32{pathTagWgs, 1, 1},
+		PathReduce2:      [3]uint32{pathReduceWg, 1, 1},
+		PathScan1:        [3]uint32{reducedSize / pathReduceWg, 1, 1},
+		PathScan:         [3]uint32{pathTagWgs, 1, 1},
+		BboxClear:        [3]uint32{drawObjectWgs, 1, 1},
+		Flatten:          [3]uint32{flattenWgs, 1, 1},
+		DrawReduce:       [3]uint32{drawMonoidWgs, 1, 1},
+		DrawLeaf:         [3]uint32{drawMonoidWgs, 1, 1},
+		ClipReduce:       [3]uint32{clipReduceWgs, 1, 1},
+		ClipLeaf:         [3]uint32{clipWgs, 1, 1},
+		Binning:          [3]uint32{drawObjectWgs, 1, 1},
+		TileAlloc:        [3]uint32{pathWgs, 1, 1},
+		PathCountSetup:   [3]uint32{1, 1, 1},
+		Backdrop:         [3]uint32{pathWgs, 1, 1},
+		Coarse:           [3]uint32{widthInBins, heightInBins, 1},
+		PathTilingSetup:  [3]uint32{1, 1, 1},
+		Fine:             [3]uint32{widthInTiles, heightInTiles, 1},
 	}
 }
 
-func next_multiple_of[T constraints.Integer](x, y T) T {
+func nextMultipleOf[T constraints.Integer](x, y T) T {
 	r := x % y
 	if r == 0 {
 		return x

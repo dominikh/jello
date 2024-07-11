@@ -5,27 +5,27 @@ import (
 )
 
 type Render struct {
-	fine_wg_count  option[WorkgroupSize]
-	fine_resources option[fineResources]
-	mask_buf       option[ResourceProxy]
+	fineWgCount   option[WorkgroupSize]
+	fineResources option[fineResources]
+	maskBuf       option[ResourceProxy]
 }
 
 type fineResources struct {
-	aa_config AaConfig
+	aaConfig AaConfig
 
-	config_buf        ResourceProxy
-	bump_buf          ResourceProxy
-	tile_buf          ResourceProxy
-	segments_buf      ResourceProxy
-	ptcl_buf          ResourceProxy
-	gradient_image    ResourceProxy
-	info_bin_data_buf ResourceProxy
-	image_atlas       ResourceProxy
+	configBuf      ResourceProxy
+	bumpBuf        ResourceProxy
+	tileBuf        ResourceProxy
+	segmentsBuf    ResourceProxy
+	ptclBuf        ResourceProxy
+	gradientImage  ResourceProxy
+	infoBinDataBuf ResourceProxy
+	imageAtlas     ResourceProxy
 
-	out_image ImageProxy
+	outImage ImageProxy
 }
 
-func (self *Render) RenderEncodingCoarse(
+func (r *Render) RenderEncodingCoarse(
 	encoding *Encoding,
 	resolver *Resolver,
 	shaders *FullShaders,
@@ -34,384 +34,384 @@ func (self *Render) RenderEncodingCoarse(
 ) *Recording {
 	var recording Recording
 	layout, ramps, images, packed := resolver.Resolve(encoding, nil)
-	var gradient_image ResourceProxy
+	var gradientImage ResourceProxy
 	if ramps.Height == 0 {
-		gradient_image = NewImageProxy(1, 1, Rgba8)
+		gradientImage = NewImageProxy(1, 1, Rgba8)
 	} else {
 		panic("gradients not implemented")
 	}
-	var image_atlas ImageProxy
+	var imageAtlas ImageProxy
 	if len(images.Images) == 0 {
-		image_atlas = NewImageProxy(1, 1, Rgba8)
+		imageAtlas = NewImageProxy(1, 1, Rgba8)
 	} else {
 		panic("images not implemented")
 	}
 	// XXX write images to atlas
 
-	cpu_config := NewRenderConfig(&layout, params.Width, params.Height, params.BaseColor)
-	buffer_sizes := &cpu_config.buffer_sizes
-	wg_counts := &cpu_config.workgroup_counts
+	cpuConfig := NewRenderConfig(&layout, params.Width, params.Height, params.BaseColor)
+	bufferSizes := &cpuConfig.bufferSizes
+	wgCounts := &cpuConfig.workgroupCounts
 
-	scene_buf := recording.Upload("scene", packed)
-	config_buf := recording.UploadUniform("config", safeish.AsBytes(&cpu_config.gpu))
-	info_bin_data_buf := NewBufferProxy(
-		uint64(buffer_sizes.Bin_data.size_in_bytes()),
-		"info_bin_data_buf",
+	sceneBuf := recording.Upload("scene", packed)
+	configBuf := recording.UploadUniform("config", safeish.AsBytes(&cpuConfig.gpu))
+	infoBinDataBuf := NewBufferProxy(
+		uint64(bufferSizes.BinData.sizeInBytes()),
+		"infoBinDataBuf",
 	)
-	tile_buf := NewBufferProxy(uint64(buffer_sizes.Tiles.size_in_bytes()), "tile_buf")
-	segments_buf := NewBufferProxy(uint64(buffer_sizes.Segments.size_in_bytes()), "segments_buf")
-	ptcl_buf := NewBufferProxy(uint64(buffer_sizes.Ptcl.size_in_bytes()), "ptcl_buf")
-	reduced_buf := NewBufferProxy(
-		uint64(buffer_sizes.Path_reduced.size_in_bytes()),
-		"reduced_buf",
+	tileBuf := NewBufferProxy(uint64(bufferSizes.Tiles.sizeInBytes()), "tileBuf")
+	segmentsBuf := NewBufferProxy(uint64(bufferSizes.Segments.sizeInBytes()), "segmentsBuf")
+	ptclBuf := NewBufferProxy(uint64(bufferSizes.Ptcl.sizeInBytes()), "ptclBuf")
+	reducedBuf := NewBufferProxy(
+		uint64(bufferSizes.PathReduced.sizeInBytes()),
+		"reducedBuf",
 	)
-	// TODO: really only need pathtag_wgs - 1
+	// TODO: really only need pathtagWgs - 1
 	recording.Dispatch(
 		shaders.PathtagReduce,
-		wg_counts.Path_reduce,
-		[]ResourceProxy{config_buf, scene_buf, reduced_buf},
+		wgCounts.PathReduce,
+		[]ResourceProxy{configBuf, sceneBuf, reducedBuf},
 	)
-	pathtag_parent := reduced_buf
-	var large_pathtag_bufs option[[2]ResourceProxy]
-	use_large_path_scan := wg_counts.Use_large_path_scan && !shaders.PathtagIsCPU
-	if use_large_path_scan {
-		reduced2_buf := NewBufferProxy(
-			uint64(buffer_sizes.Path_reduced2.size_in_bytes()),
-			"reduced2_buf",
+	pathtagParent := reducedBuf
+	var largePathtagBufs option[[2]ResourceProxy]
+	useLargePathScan := wgCounts.UseLargePathScan && !shaders.PathtagIsCPU
+	if useLargePathScan {
+		reduced2Buf := NewBufferProxy(
+			uint64(bufferSizes.PathReduced2.sizeInBytes()),
+			"reduced2Buf",
 		)
 		recording.Dispatch(
 			shaders.PathtagReduce2,
-			wg_counts.Path_reduce2,
-			[]ResourceProxy{reduced_buf, reduced2_buf},
+			wgCounts.PathReduce2,
+			[]ResourceProxy{reducedBuf, reduced2Buf},
 		)
-		reduced_scan_buf := NewBufferProxy(
-			uint64(buffer_sizes.Path_reduced_scan.size_in_bytes()),
-			"reduced_scan_buf",
+		reducedScanBuf := NewBufferProxy(
+			uint64(bufferSizes.PathReducedScan.sizeInBytes()),
+			"reducedScanBuf",
 		)
 		recording.Dispatch(
 			shaders.PathtagScan1,
-			wg_counts.Path_scan1,
-			[]ResourceProxy{reduced_buf, reduced2_buf, reduced_scan_buf},
+			wgCounts.PathScan1,
+			[]ResourceProxy{reducedBuf, reduced2Buf, reducedScanBuf},
 		)
-		pathtag_parent = reduced_scan_buf
-		large_pathtag_bufs.set([2]ResourceProxy{reduced2_buf, reduced_scan_buf})
+		pathtagParent = reducedScanBuf
+		largePathtagBufs.set([2]ResourceProxy{reduced2Buf, reducedScanBuf})
 	}
 
-	tagmonoid_buf := NewBufferProxy(
-		uint64(buffer_sizes.Path_monoids.size_in_bytes()),
-		"tagmonoid_buf",
+	tagmonoidBuf := NewBufferProxy(
+		uint64(bufferSizes.PathMonoids.sizeInBytes()),
+		"tagmonoidBuf",
 	)
-	var pathtag_scan ShaderID
-	if use_large_path_scan {
-		pathtag_scan = shaders.PathtagScanLarge
+	var pathtagScan ShaderID
+	if useLargePathScan {
+		pathtagScan = shaders.PathtagScanLarge
 	} else {
-		pathtag_scan = shaders.PathtagScanSmall
+		pathtagScan = shaders.PathtagScanSmall
 	}
 	recording.Dispatch(
-		pathtag_scan,
-		wg_counts.Path_scan,
-		[]ResourceProxy{config_buf, scene_buf, pathtag_parent, tagmonoid_buf},
+		pathtagScan,
+		wgCounts.PathScan,
+		[]ResourceProxy{configBuf, sceneBuf, pathtagParent, tagmonoidBuf},
 	)
-	recording.FreeResource(reduced_buf)
-	if large_pathtag_bufs.isSet {
-		recording.FreeResource(large_pathtag_bufs.value[0])
-		recording.FreeResource(large_pathtag_bufs.value[1])
+	recording.FreeResource(reducedBuf)
+	if largePathtagBufs.isSet {
+		recording.FreeResource(largePathtagBufs.value[0])
+		recording.FreeResource(largePathtagBufs.value[1])
 	}
-	path_bbox_buf := NewBufferProxy(
-		uint64(buffer_sizes.Path_bboxes.size_in_bytes()),
-		"path_bbox_buf",
+	pathBboxBuf := NewBufferProxy(
+		uint64(bufferSizes.PathBboxes.sizeInBytes()),
+		"pathBboxBuf",
 	)
 	recording.Dispatch(
 		shaders.BboxClear,
-		wg_counts.Bbox_clear,
-		[]ResourceProxy{config_buf, path_bbox_buf},
+		wgCounts.BboxClear,
+		[]ResourceProxy{configBuf, pathBboxBuf},
 	)
-	bump_buf := NewBufferProxy(uint64(buffer_sizes.Bump_alloc.size_in_bytes()), "bump_buf")
-	recording.ClearAll(bump_buf)
-	lines_buf := NewBufferProxy(uint64(buffer_sizes.Lines.size_in_bytes()), "lines_buf")
+	bumpBuf := NewBufferProxy(uint64(bufferSizes.BumpAlloc.sizeInBytes()), "bumpBuf")
+	recording.ClearAll(bumpBuf)
+	linesBuf := NewBufferProxy(uint64(bufferSizes.Lines.sizeInBytes()), "linesBuf")
 	recording.Dispatch(
 		shaders.Flatten,
-		wg_counts.Flatten,
+		wgCounts.Flatten,
 		[]ResourceProxy{
-			config_buf,
-			scene_buf,
-			tagmonoid_buf,
-			path_bbox_buf,
-			bump_buf,
-			lines_buf,
+			configBuf,
+			sceneBuf,
+			tagmonoidBuf,
+			pathBboxBuf,
+			bumpBuf,
+			linesBuf,
 		},
 	)
-	draw_reduced_buf := NewBufferProxy(
-		uint64(buffer_sizes.Draw_reduced.size_in_bytes()),
-		"draw_reduced_buf",
+	drawReducedBuf := NewBufferProxy(
+		uint64(bufferSizes.DrawReduced.sizeInBytes()),
+		"drawReducedBuf",
 	)
 	recording.Dispatch(
 		shaders.DrawReduce,
-		wg_counts.Draw_reduce,
-		[]ResourceProxy{config_buf, scene_buf, draw_reduced_buf},
+		wgCounts.DrawReduce,
+		[]ResourceProxy{configBuf, sceneBuf, drawReducedBuf},
 	)
-	draw_monoid_buf := NewBufferProxy(
-		uint64(buffer_sizes.Draw_monoids.size_in_bytes()),
-		"draw_monoid_buf",
+	drawMonoidBuf := NewBufferProxy(
+		uint64(bufferSizes.DrawMonoids.sizeInBytes()),
+		"drawMonoidBuf",
 	)
-	clip_inp_buf := NewBufferProxy(
-		uint64(buffer_sizes.Clip_inps.size_in_bytes()),
-		"clip_inp_buf",
+	clipInpBuf := NewBufferProxy(
+		uint64(bufferSizes.ClipInps.sizeInBytes()),
+		"clipInpBuf",
 	)
 	recording.Dispatch(
 		shaders.DrawLeaf,
-		wg_counts.Draw_leaf,
+		wgCounts.DrawLeaf,
 		[]ResourceProxy{
-			config_buf,
-			scene_buf,
-			draw_reduced_buf,
-			path_bbox_buf,
-			draw_monoid_buf,
-			info_bin_data_buf,
-			clip_inp_buf,
+			configBuf,
+			sceneBuf,
+			drawReducedBuf,
+			pathBboxBuf,
+			drawMonoidBuf,
+			infoBinDataBuf,
+			clipInpBuf,
 		},
 	)
-	recording.FreeResource(draw_reduced_buf)
-	clip_el_buf := NewBufferProxy(uint64(buffer_sizes.Clip_els.size_in_bytes()), "clip_el_buf")
-	clip_bic_buf := NewBufferProxy(
-		uint64(buffer_sizes.Clip_bics.size_in_bytes()),
-		"clip_bic_buf",
+	recording.FreeResource(drawReducedBuf)
+	clipElBuf := NewBufferProxy(uint64(bufferSizes.ClipEls.sizeInBytes()), "clipElBuf")
+	clipBicBuf := NewBufferProxy(
+		uint64(bufferSizes.ClipBics.sizeInBytes()),
+		"clipBicBuf",
 	)
-	if wg_counts.Clip_reduce[0] > 0 {
+	if wgCounts.ClipReduce[0] > 0 {
 		recording.Dispatch(
 			shaders.ClipReduce,
-			wg_counts.Clip_reduce,
-			[]ResourceProxy{clip_inp_buf, path_bbox_buf, clip_bic_buf, clip_el_buf},
+			wgCounts.ClipReduce,
+			[]ResourceProxy{clipInpBuf, pathBboxBuf, clipBicBuf, clipElBuf},
 		)
 	}
-	clip_bbox_buf := NewBufferProxy(
-		uint64(buffer_sizes.Clip_bboxes.size_in_bytes()),
-		"clip_bbox_buf",
+	clipBboxBuf := NewBufferProxy(
+		uint64(bufferSizes.ClipBboxes.sizeInBytes()),
+		"clipBboxBuf",
 	)
-	if wg_counts.Clip_leaf[0] > 0 {
+	if wgCounts.ClipLeaf[0] > 0 {
 		recording.Dispatch(
 			shaders.ClipLeaf,
-			wg_counts.Clip_leaf,
+			wgCounts.ClipLeaf,
 			[]ResourceProxy{
-				config_buf,
-				clip_inp_buf,
-				path_bbox_buf,
-				clip_bic_buf,
-				clip_el_buf,
-				draw_monoid_buf,
-				clip_bbox_buf,
+				configBuf,
+				clipInpBuf,
+				pathBboxBuf,
+				clipBicBuf,
+				clipElBuf,
+				drawMonoidBuf,
+				clipBboxBuf,
 			},
 		)
 	}
-	recording.FreeResource(clip_inp_buf)
-	recording.FreeResource(clip_bic_buf)
-	recording.FreeResource(clip_el_buf)
-	draw_bbox_buf := NewBufferProxy(
-		uint64(buffer_sizes.Draw_bboxes.size_in_bytes()),
-		"draw_bbox_buf",
+	recording.FreeResource(clipInpBuf)
+	recording.FreeResource(clipBicBuf)
+	recording.FreeResource(clipElBuf)
+	drawBboxBuf := NewBufferProxy(
+		uint64(bufferSizes.DrawBboxes.sizeInBytes()),
+		"drawBboxBuf",
 	)
-	bin_header_buf := NewBufferProxy(
-		uint64(buffer_sizes.Bin_headers.size_in_bytes()),
-		"bin_header_buf",
+	binHeaderBuf := NewBufferProxy(
+		uint64(bufferSizes.BinHeaders.sizeInBytes()),
+		"binHeaderBuf",
 	)
 	recording.Dispatch(
 		shaders.Binning,
-		wg_counts.Binning,
+		wgCounts.Binning,
 		[]ResourceProxy{
-			config_buf,
-			draw_monoid_buf,
-			path_bbox_buf,
-			clip_bbox_buf,
-			draw_bbox_buf,
-			bump_buf,
-			info_bin_data_buf,
-			bin_header_buf,
+			configBuf,
+			drawMonoidBuf,
+			pathBboxBuf,
+			clipBboxBuf,
+			drawBboxBuf,
+			bumpBuf,
+			infoBinDataBuf,
+			binHeaderBuf,
 		},
 	)
-	recording.FreeResource(draw_monoid_buf)
-	recording.FreeResource(path_bbox_buf)
-	recording.FreeResource(clip_bbox_buf)
-	// Note: this only needs to be rounded up because of the workaround to store the tile_offset
+	recording.FreeResource(drawMonoidBuf)
+	recording.FreeResource(pathBboxBuf)
+	recording.FreeResource(clipBboxBuf)
+	// Note: this only needs to be rounded up because of the workaround to store the tileOffset
 	// in storage rather than workgroup memory.
-	path_buf := NewBufferProxy(uint64(buffer_sizes.Paths.size_in_bytes()), "path_buf")
+	pathBuf := NewBufferProxy(uint64(bufferSizes.Paths.sizeInBytes()), "pathBuf")
 	recording.Dispatch(
 		shaders.TileAlloc,
-		wg_counts.Tile_alloc,
+		wgCounts.TileAlloc,
 		[]ResourceProxy{
-			config_buf,
-			scene_buf,
-			draw_bbox_buf,
-			bump_buf,
-			path_buf,
-			tile_buf,
+			configBuf,
+			sceneBuf,
+			drawBboxBuf,
+			bumpBuf,
+			pathBuf,
+			tileBuf,
 		},
 	)
-	recording.FreeResource(draw_bbox_buf)
-	recording.FreeResource(tagmonoid_buf)
-	indirect_count_buf := NewBufferProxy(
-		uint64(buffer_sizes.Indirect_count.size_in_bytes()),
-		"indirect_count",
+	recording.FreeResource(drawBboxBuf)
+	recording.FreeResource(tagmonoidBuf)
+	indirectCountBuf := NewBufferProxy(
+		uint64(bufferSizes.IndirectCount.sizeInBytes()),
+		"indirectCount",
 	)
 	recording.Dispatch(
 		shaders.PathCountSetup,
-		wg_counts.Path_count_setup,
-		[]ResourceProxy{bump_buf, indirect_count_buf},
+		wgCounts.PathCountSetup,
+		[]ResourceProxy{bumpBuf, indirectCountBuf},
 	)
-	seg_counts_buf := NewBufferProxy(
-		uint64(buffer_sizes.Seg_counts.size_in_bytes()),
-		"seg_counts_buf",
+	segCountsBuf := NewBufferProxy(
+		uint64(bufferSizes.SegCounts.sizeInBytes()),
+		"segCountsBuf",
 	)
 	recording.DispatchIndirect(
 		shaders.PathCount,
-		indirect_count_buf,
+		indirectCountBuf,
 		0,
 		[]ResourceProxy{
-			config_buf,
-			bump_buf,
-			lines_buf,
-			path_buf,
-			tile_buf,
-			seg_counts_buf,
+			configBuf,
+			bumpBuf,
+			linesBuf,
+			pathBuf,
+			tileBuf,
+			segCountsBuf,
 		},
 	)
 	recording.Dispatch(
 		shaders.BackdropDyn,
-		wg_counts.Backdrop,
-		[]ResourceProxy{config_buf, bump_buf, path_buf, tile_buf},
+		wgCounts.Backdrop,
+		[]ResourceProxy{configBuf, bumpBuf, pathBuf, tileBuf},
 	)
 	recording.Dispatch(
 		shaders.Coarse,
-		wg_counts.Coarse,
+		wgCounts.Coarse,
 		[]ResourceProxy{
-			config_buf,
-			scene_buf,
-			draw_monoid_buf,
-			bin_header_buf,
-			info_bin_data_buf,
-			path_buf,
-			tile_buf,
-			bump_buf,
-			ptcl_buf,
+			configBuf,
+			sceneBuf,
+			drawMonoidBuf,
+			binHeaderBuf,
+			infoBinDataBuf,
+			pathBuf,
+			tileBuf,
+			bumpBuf,
+			ptclBuf,
 		},
 	)
 	recording.Dispatch(
 		shaders.PathTilingSetup,
-		wg_counts.Path_tiling_setup,
-		[]ResourceProxy{bump_buf, indirect_count_buf, ptcl_buf},
+		wgCounts.PathTilingSetup,
+		[]ResourceProxy{bumpBuf, indirectCountBuf, ptclBuf},
 	)
 	recording.DispatchIndirect(
 		shaders.PathTiling,
-		indirect_count_buf,
+		indirectCountBuf,
 		0,
 		[]ResourceProxy{
-			bump_buf,
-			seg_counts_buf,
-			lines_buf,
-			path_buf,
-			tile_buf,
-			segments_buf,
+			bumpBuf,
+			segCountsBuf,
+			linesBuf,
+			pathBuf,
+			tileBuf,
+			segmentsBuf,
 		},
 	)
-	recording.FreeBuffer(indirect_count_buf)
-	recording.FreeResource(seg_counts_buf)
-	recording.FreeResource(lines_buf)
-	recording.FreeResource(scene_buf)
-	recording.FreeResource(draw_monoid_buf)
-	recording.FreeResource(bin_header_buf)
-	recording.FreeResource(path_buf)
-	out_image := NewImageProxy(params.Width, params.Height, Rgba8)
-	self.fine_wg_count.set(wg_counts.Fine)
-	self.fine_resources.set(fineResources{
-		aa_config:         params.AntialiasingMethod,
-		config_buf:        config_buf,
-		bump_buf:          bump_buf,
-		tile_buf:          tile_buf,
-		segments_buf:      segments_buf,
-		ptcl_buf:          ptcl_buf,
-		gradient_image:    gradient_image,
-		info_bin_data_buf: info_bin_data_buf,
-		image_atlas:       image_atlas,
-		out_image:         out_image,
+	recording.FreeBuffer(indirectCountBuf)
+	recording.FreeResource(segCountsBuf)
+	recording.FreeResource(linesBuf)
+	recording.FreeResource(sceneBuf)
+	recording.FreeResource(drawMonoidBuf)
+	recording.FreeResource(binHeaderBuf)
+	recording.FreeResource(pathBuf)
+	outImage := NewImageProxy(params.Width, params.Height, Rgba8)
+	r.fineWgCount.set(wgCounts.Fine)
+	r.fineResources.set(fineResources{
+		aaConfig:       params.AntialiasingMethod,
+		configBuf:      configBuf,
+		bumpBuf:        bumpBuf,
+		tileBuf:        tileBuf,
+		segmentsBuf:    segmentsBuf,
+		ptclBuf:        ptclBuf,
+		gradientImage:  gradientImage,
+		infoBinDataBuf: infoBinDataBuf,
+		imageAtlas:     imageAtlas,
+		outImage:       outImage,
 	})
 	if robust {
-		recording.Download(bump_buf)
+		recording.Download(bumpBuf)
 	}
-	recording.FreeResource(bump_buf)
+	recording.FreeResource(bumpBuf)
 	return &recording
 }
 
-func (self *Render) RecordFine(shaders *FullShaders, recording *Recording) {
-	fine_wg_count := self.fine_wg_count.take().unwrap()
-	fine := self.fine_resources.take().unwrap()
-	switch fine.aa_config {
+func (r *Render) RecordFine(shaders *FullShaders, recording *Recording) {
+	fineWgCount := r.fineWgCount.take().unwrap()
+	fine := r.fineResources.take().unwrap()
+	switch fine.aaConfig {
 	case Area:
 		recording.Dispatch(
 			shaders.FineArea,
-			fine_wg_count,
+			fineWgCount,
 			[]ResourceProxy{
-				fine.config_buf,
-				fine.segments_buf,
-				fine.ptcl_buf,
-				fine.info_bin_data_buf,
-				fine.out_image,
-				fine.gradient_image,
-				fine.image_atlas,
+				fine.configBuf,
+				fine.segmentsBuf,
+				fine.ptclBuf,
+				fine.infoBinDataBuf,
+				fine.outImage,
+				fine.gradientImage,
+				fine.imageAtlas,
 			},
 		)
 	default:
-		if !self.mask_buf.isSet {
-			var mask_lut []uint8
-			switch fine.aa_config {
+		if !r.maskBuf.isSet {
+			var maskLUT []uint8
+			switch fine.aaConfig {
 			case Msaa16:
-				mask_lut = make_mask_lut_16()
+				maskLUT = makeMaskLUT16()
 			case Msaa8:
-				mask_lut = make_mask_lut()
+				maskLUT = makeMaskLUT()
 			default:
 				panic("unreachable")
 			}
-			buf := recording.Upload("mask lut", mask_lut)
-			self.mask_buf.set(buf)
+			buf := recording.Upload("mask lut", maskLUT)
+			r.maskBuf.set(buf)
 		}
-		var fine_shader ShaderID
-		switch fine.aa_config {
+		var fineShader ShaderID
+		switch fine.aaConfig {
 		case Msaa16:
-			fine_shader = shaders.FineMSAA16
+			fineShader = shaders.FineMSAA16
 		case Msaa8:
-			fine_shader = shaders.FineMSAA8
+			fineShader = shaders.FineMSAA8
 		default:
 			panic("unreachable")
 		}
 
 		recording.Dispatch(
-			fine_shader,
-			fine_wg_count,
+			fineShader,
+			fineWgCount,
 			[]ResourceProxy{
-				fine.config_buf,
-				fine.segments_buf,
-				fine.ptcl_buf,
-				fine.info_bin_data_buf,
-				fine.out_image,
-				fine.gradient_image,
-				fine.image_atlas,
-				self.mask_buf.unwrap(),
+				fine.configBuf,
+				fine.segmentsBuf,
+				fine.ptclBuf,
+				fine.infoBinDataBuf,
+				fine.outImage,
+				fine.gradientImage,
+				fine.imageAtlas,
+				r.maskBuf.unwrap(),
 			},
 		)
 	}
 
-	recording.FreeResource(fine.config_buf)
-	recording.FreeResource(fine.tile_buf)
-	recording.FreeResource(fine.segments_buf)
-	recording.FreeResource(fine.ptcl_buf)
-	recording.FreeResource(fine.gradient_image)
-	recording.FreeResource(fine.image_atlas)
-	recording.FreeResource(fine.info_bin_data_buf)
+	recording.FreeResource(fine.configBuf)
+	recording.FreeResource(fine.tileBuf)
+	recording.FreeResource(fine.segmentsBuf)
+	recording.FreeResource(fine.ptclBuf)
+	recording.FreeResource(fine.gradientImage)
+	recording.FreeResource(fine.imageAtlas)
+	recording.FreeResource(fine.infoBinDataBuf)
 	// TODO: make mask buf persistent
-	mask_buf := self.mask_buf.take()
-	if mask_buf.isSet {
-		recording.FreeResource(mask_buf.value)
+	maskBuf := r.maskBuf.take()
+	if maskBuf.isSet {
+		recording.FreeResource(maskBuf.value)
 	}
 }
 
 func (r *Render) OutImage() ImageProxy {
-	return r.fine_resources.value.out_image
+	return r.fineResources.value.outImage
 }

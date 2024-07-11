@@ -193,8 +193,7 @@ func NewBlitPipeline(dev *wgpu.Device, format wgpu.TextureFormat) *BlitPipeline 
 			fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 				let rgba_sep = textureLoad(fine_output, vec2<i32>(pos.xy), 0);
 				return vec4(rgba_sep.rgb * rgba_sep.a, rgba_sep.a);
-			}
-`
+			}`
 
 	shader := dev.MustCreateShaderModule(wgpu.ShaderModuleDescriptor{
 		Label:  "blit shaders",

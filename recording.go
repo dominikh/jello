@@ -40,8 +40,8 @@ func (rec *Recording) UploadUniform(name string, data []byte) BufferProxy {
 	return buf
 }
 
-func (rec *Recording) Dispatch(shader ShaderID, wg_size [3]uint32, resources []ResourceProxy) {
-	rec.push(Dispatch{shader, wg_size, resources})
+func (rec *Recording) Dispatch(shader ShaderID, wgSize [3]uint32, resources []ResourceProxy) {
+	rec.push(Dispatch{shader, wgSize, resources})
 }
 
 func (rec *Recording) DispatchIndirect(

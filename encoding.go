@@ -26,8 +26,8 @@ type Encoding struct {
 }
 
 const (
-	FORCE_NEXT_TRANSFORM uint32 = 1
-	FORCE_NEXT_STYLE     uint32 = 2
+	forceNextTransform uint32 = 1
+	forceNextStyle     uint32 = 2
 )
 
 func (enc *Encoding) IsEmpty() bool {
@@ -90,18 +90,18 @@ func (enc *Encoding) EncodeStrokeStyle(stroke curve.Stroke) {
 }
 
 func (enc *Encoding) EncodeStyle(style Style) {
-	if enc.Flags&FORCE_NEXT_STYLE != 0 || len(enc.Styles) == 0 || enc.Styles[len(enc.Styles)-1] != style {
-		enc.PathTags = append(enc.PathTags, STYLE)
+	if enc.Flags&forceNextStyle != 0 || len(enc.Styles) == 0 || enc.Styles[len(enc.Styles)-1] != style {
+		enc.PathTags = append(enc.PathTags, PathTagStyle)
 		enc.Styles = append(enc.Styles, style)
-		enc.Flags &^= FORCE_NEXT_STYLE
+		enc.Flags &^= forceNextStyle
 	}
 }
 
 func (enc *Encoding) EncodeTransform(transform Transform) bool {
-	if enc.Flags&FORCE_NEXT_TRANSFORM != 0 || len(enc.Transforms) == 0 || enc.Transforms[len(enc.Transforms)-1] != transform {
-		enc.PathTags = append(enc.PathTags, TRANSFORM)
+	if enc.Flags&forceNextTransform != 0 || len(enc.Transforms) == 0 || enc.Transforms[len(enc.Transforms)-1] != transform {
+		enc.PathTags = append(enc.PathTags, PathTagTransform)
 		enc.Transforms = append(enc.Transforms, transform)
-		enc.Flags &^= FORCE_NEXT_TRANSFORM
+		enc.Flags &^= forceNextTransform
 		return true
 	} else {
 		return false
@@ -148,7 +148,7 @@ func (enc *Encoding) EncodeBrush(b brush.Brush, alpha float32) {
 }
 
 func (enc *Encoding) EncodeColor(color DrawColor) {
-	enc.DrawTags = append(enc.DrawTags, COLOR)
+	enc.DrawTags = append(enc.DrawTags, DrawTagColor)
 	enc.DrawData = binary.LittleEndian.AppendUint32(enc.DrawData, color.RGBA)
 }
 
@@ -158,7 +158,7 @@ func (enc *Encoding) EncodeColor(color DrawColor) {
 // XXX EncodeImage
 
 func (enc *Encoding) EncodeBeginClip(blendMode brush.BlendMode, alpha float32) {
-	enc.DrawTags = append(enc.DrawTags, BEGIN_CLIP)
+	enc.DrawTags = append(enc.DrawTags, DrawTagBeginClip)
 	d1 := (uint32(blendMode.Mix) << 8) | uint32(blendMode.Compose)
 	d2 := alpha
 	var d [8]byte
@@ -173,16 +173,16 @@ func (enc *Encoding) EncodeEndClip() {
 	if enc.NumOpenClips == 0 {
 		return
 	}
-	enc.DrawTags = append(enc.DrawTags, END_CLIP)
+	enc.DrawTags = append(enc.DrawTags, DrawTagEndClip)
 	// This is a dummy path, and will go away with the new clip impl.
-	enc.PathTags = append(enc.PathTags, PATH)
+	enc.PathTags = append(enc.PathTags, PathTagPath)
 	enc.NumPaths++
 	enc.NumClips++
 	enc.NumOpenClips--
 }
 
 func (enc *Encoding) ForceNextTransformAndStyle() {
-	enc.Flags |= FORCE_NEXT_TRANSFORM | FORCE_NEXT_STYLE
+	enc.Flags |= forceNextTransform | forceNextStyle
 }
 
 func (enc *Encoding) SwapLastPathTags() {

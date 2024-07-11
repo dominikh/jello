@@ -25,55 +25,55 @@ func (s *Scene) BumpEstimate(affine option[curve.Affine]) BumpAllocatorMemory {
 	return s.Estimator.Tally(trans)
 }
 
-func (self *Scene) PushLayer(
+func (sc *Scene) PushLayer(
 	blend brush.BlendMode,
 	alpha float32,
 	transform curve.Affine,
 	clip curve.Shape,
 ) {
 	t := transformFromKurbo(transform)
-	self.Encoding.EncodeTransform(t)
-	self.Encoding.EncodeFillStyle(brush.NonZero)
-	if !self.Encoding.EncodeShape(clip, true) {
+	sc.Encoding.EncodeTransform(t)
+	sc.Encoding.EncodeFillStyle(brush.NonZero)
+	if !sc.Encoding.EncodeShape(clip, true) {
 		// If the layer shape is invalid, encode a valid empty path. This suppresses
 		// all drawing until the layer is popped.
-		self.Encoding.EncodeShape(curve.Rect{}, true)
+		sc.Encoding.EncodeShape(curve.Rect{}, true)
 	} else {
-		self.Estimator.CountPath(clip.PathElements(0.1), t, option[curve.Stroke]{})
+		sc.Estimator.CountPath(clip.PathElements(0.1), t, option[curve.Stroke]{})
 	}
-	self.Encoding.EncodeBeginClip(blend, min(max(alpha, 0), 1))
+	sc.Encoding.EncodeBeginClip(blend, min(max(alpha, 0), 1))
 }
 
-func (self *Scene) PopLayer() {
-	self.Encoding.EncodeEndClip()
+func (sc *Scene) PopLayer() {
+	sc.Encoding.EncodeEndClip()
 }
 
-func (self *Scene) Fill(
+func (sc *Scene) Fill(
 	style brush.Fill,
 	transform curve.Affine,
 	brush brush.Brush,
-	brush_transform *curve.Affine,
+	brushTransform *curve.Affine,
 	shape curve.Shape,
 ) {
 	t := transformFromKurbo(transform)
-	self.Encoding.EncodeTransform(t)
-	self.Encoding.EncodeFillStyle(style)
-	if self.Encoding.EncodeShape(shape, true) {
-		if brush_transform != nil {
-			if self.Encoding.EncodeTransform(transformFromKurbo(transform.Mul(*brush_transform))) {
-				self.Encoding.SwapLastPathTags()
+	sc.Encoding.EncodeTransform(t)
+	sc.Encoding.EncodeFillStyle(style)
+	if sc.Encoding.EncodeShape(shape, true) {
+		if brushTransform != nil {
+			if sc.Encoding.EncodeTransform(transformFromKurbo(transform.Mul(*brushTransform))) {
+				sc.Encoding.SwapLastPathTags()
 			}
 		}
-		self.Encoding.EncodeBrush(brush, 1.0)
-		self.Estimator.CountPath(shape.PathElements(0.1), t, option[curve.Stroke]{})
+		sc.Encoding.EncodeBrush(brush, 1.0)
+		sc.Estimator.CountPath(shape.PathElements(0.1), t, option[curve.Stroke]{})
 	}
 }
 
-func (self *Scene) Stroke(
+func (sc *Scene) Stroke(
 	style curve.Stroke,
 	transform curve.Affine,
 	b brush.Brush,
-	brush_transform *curve.Affine,
+	brushTransform *curve.Affine,
 	shape curve.Shape,
 ) {
 	// The setting for tolerance are a compromise. For most applications,
@@ -87,22 +87,22 @@ func (self *Scene) Stroke(
 	// applied post-stroking, so may exceed visible threshold. When we do
 	// GPU-side stroking, the transform will be known. In the meantime,
 	// this is a compromise.
-	const SHAPE_TOLERANCE = 0.01
-	const STROKE_TOLERANCE = SHAPE_TOLERANCE
+	const shapeTolerance = 0.01
+	const strokeTolerance = shapeTolerance
 
-	const GPU_STROKES = true // Set this to `true` to enable GPU-side stroking
-	if GPU_STROKES {
+	const gpuStrokes = true // Set this to `true` to enable GPU-side stroking
+	if gpuStrokes {
 		t := transformFromKurbo(transform)
-		self.Encoding.EncodeTransform(t)
-		self.Encoding.EncodeStrokeStyle(style)
+		sc.Encoding.EncodeTransform(t)
+		sc.Encoding.EncodeStrokeStyle(style)
 
 		// We currently don't support dashing on the GPU. If the style has a dash pattern, then
 		// we convert it into stroked paths on the CPU and encode those as individual draw
 		// objects.
-		var encode_result bool
+		var encodeResult bool
 		if len(style.DashPattern) == 0 {
-			self.Estimator.CountPath(shape.PathElements(SHAPE_TOLERANCE), t, some(style))
-			encode_result = self.Encoding.EncodeShape(shape, false)
+			sc.Estimator.CountPath(shape.PathElements(shapeTolerance), t, some(style))
+			encodeResult = sc.Encoding.EncodeShape(shape, false)
 		} else {
 			// TODO: We currently collect the output of the dash iterator because
 			// `encode_path_elements` wants to consume the iterator. We want to avoid calling
@@ -110,40 +110,39 @@ func (self *Scene) Stroke(
 			// Bump estimation will move to resolve time rather than scene construction time,
 			// so we can revert this back to not collecting when that happens.
 			dashed := slices.Collect(curve.Dash(
-				shape.PathElements(SHAPE_TOLERANCE),
+				shape.PathElements(shapeTolerance),
 				style.DashOffset,
 				style.DashPattern,
 			))
 			// We turn the iterator into a slice and then turn it into an
 			// iterator again to avoid doing the curve.Dash work twice.
-			self.Estimator.CountPath(slices.Values(dashed), t, some(style))
-			encode_result = self.Encoding.EncodePathElements(slices.Values(dashed), false)
+			sc.Estimator.CountPath(slices.Values(dashed), t, some(style))
+			encodeResult = sc.Encoding.EncodePathElements(slices.Values(dashed), false)
 		}
-		if encode_result {
-			if brush_transform != nil {
-				if self.Encoding.EncodeTransform(transformFromKurbo(transform.Mul(*brush_transform))) {
-					self.Encoding.SwapLastPathTags()
+		if encodeResult {
+			if brushTransform != nil {
+				if sc.Encoding.EncodeTransform(transformFromKurbo(transform.Mul(*brushTransform))) {
+					sc.Encoding.SwapLastPathTags()
 				}
 			}
-			self.Encoding.EncodeBrush(b, 1.0)
+			sc.Encoding.EncodeBrush(b, 1.0)
 		}
 	} else {
 		stroked := curve.StrokePath(
-			shape.PathElements(SHAPE_TOLERANCE),
+			shape.PathElements(shapeTolerance),
 			style,
 			curve.StrokeOpts{},
-			STROKE_TOLERANCE,
+			strokeTolerance,
 		)
-		self.Fill(brush.NonZero, transform, b, brush_transform, &stroked)
+		sc.Fill(brush.NonZero, transform, b, brushTransform, &stroked)
 	}
 }
 
-func (self *Scene) Append(other *Scene, transform option[curve.Affine]) {
-	// let t = transform.as_ref().map(Transform::from_kurbo);
+func (sc *Scene) Append(other *Scene, transform option[curve.Affine]) {
 	t := Identity
 	if transform.isSet {
 		t = transformFromKurbo(transform.value)
 	}
-	self.Encoding.Append(&other.Encoding, t)
-	self.Estimator.Append(&other.Estimator, some(t))
+	sc.Encoding.Append(&other.Encoding, t)
+	sc.Estimator.Append(&other.Estimator, some(t))
 }
