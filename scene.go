@@ -149,11 +149,10 @@ func (s *Scene) Stroke(
 	}
 }
 
-func (s *Scene) Append(other *Scene, transform *curve.Affine) {
-	t := jmath.Identity
-	if transform != nil {
-		t = jmath.TransformFromKurbo(*transform)
-	}
+func (s *Scene) Append(other *Scene, transform curve.Affine) {
+	// OPT(dh): we'd like to combine multiple scenes without having to copy data around
+
+	t := jmath.TransformFromKurbo(transform)
 	s.encoding.Append(&other.encoding, t)
 	s.estimator.Append(&other.estimator, &t)
 }
