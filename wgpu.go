@@ -461,11 +461,11 @@ func (eng *WGPUEngine) RunRecording(
 			if buf, ok := eng.BindMap.GetBuf(proxy); ok {
 				switch b := buf.Buffer.(type) {
 				case *wgpu.Buffer:
-					encoder.ClearBuffer(b, offset, size.value)
+					encoder.ClearBuffer(b, offset, uint64(size))
 				case []byte:
 					slice := b[offset:]
-					if size.isSet {
-						slice = slice[:size.value]
+					if size >= 0 {
+						slice = slice[:size]
 					}
 					clear(slice)
 				default:

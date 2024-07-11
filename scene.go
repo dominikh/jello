@@ -17,10 +17,11 @@ func (s *Scene) Reset() {
 	s.Estimator.Reset()
 }
 
-func (s *Scene) BumpEstimate(affine option[curve.Affine]) BumpAllocatorMemory {
-	var trans option[Transform]
-	if affine.isSet {
-		trans.set(transformFromKurbo(affine.value))
+func (s *Scene) BumpEstimate(affine *curve.Affine) BumpAllocatorMemory {
+	var trans *Transform
+	if affine != nil {
+		ret := transformFromKurbo(*affine)
+		trans = &ret
 	}
 	return s.Estimator.Tally(trans)
 }
@@ -39,7 +40,7 @@ func (sc *Scene) PushLayer(
 		// all drawing until the layer is popped.
 		sc.Encoding.EncodeShape(curve.Rect{}, true)
 	} else {
-		sc.Estimator.CountPath(clip.PathElements(0.1), t, option[curve.Stroke]{})
+		sc.Estimator.CountPath(clip.PathElements(0.1), t, nil)
 	}
 	sc.Encoding.EncodeBeginClip(blend, min(max(alpha, 0), 1))
 }
@@ -65,7 +66,7 @@ func (sc *Scene) Fill(
 			}
 		}
 		sc.Encoding.EncodeBrush(brush, 1.0)
-		sc.Estimator.CountPath(shape.PathElements(0.1), t, option[curve.Stroke]{})
+		sc.Estimator.CountPath(shape.PathElements(0.1), t, nil)
 	}
 }
 
@@ -101,7 +102,7 @@ func (sc *Scene) Stroke(
 		// objects.
 		var encodeResult bool
 		if len(style.DashPattern) == 0 {
-			sc.Estimator.CountPath(shape.PathElements(shapeTolerance), t, some(style))
+			sc.Estimator.CountPath(shape.PathElements(shapeTolerance), t, &style)
 			encodeResult = sc.Encoding.EncodeShape(shape, false)
 		} else {
 			// TODO: We currently collect the output of the dash iterator because
@@ -116,7 +117,7 @@ func (sc *Scene) Stroke(
 			))
 			// We turn the iterator into a slice and then turn it into an
 			// iterator again to avoid doing the curve.Dash work twice.
-			sc.Estimator.CountPath(slices.Values(dashed), t, some(style))
+			sc.Estimator.CountPath(slices.Values(dashed), t, &style)
 			encodeResult = sc.Encoding.EncodePathElements(slices.Values(dashed), false)
 		}
 		if encodeResult {
@@ -138,11 +139,11 @@ func (sc *Scene) Stroke(
 	}
 }
 
-func (sc *Scene) Append(other *Scene, transform option[curve.Affine]) {
+func (sc *Scene) Append(other *Scene, transform *curve.Affine) {
 	t := Identity
-	if transform.isSet {
-		t = transformFromKurbo(transform.value)
+	if transform != nil {
+		t = transformFromKurbo(*transform)
 	}
 	sc.Encoding.Append(&other.Encoding, t)
-	sc.Estimator.Append(&other.Estimator, some(t))
+	sc.Estimator.Append(&other.Estimator, &t)
 }

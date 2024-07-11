@@ -230,13 +230,19 @@ func (enc *PathEncoder) MoveTo(x, y float32) {
 	enc.state = PathStateMoveTo
 }
 
-func (enc *PathEncoder) isZeroLengthSegment(p1 [2]float32, p2_, p3_ option[[2]float32]) bool {
+func (enc *PathEncoder) isZeroLengthSegment(p1 [2]float32, p2_, p3_ *[2]float32) bool {
 	p0, ok := enc.lastPoint()
 	if !ok {
 		panic("unreachable")
 	}
-	p2 := p2_.unwrapOr(p1)
-	p3 := p3_.unwrapOr(p1)
+	p2 := p1
+	p3 := p1
+	if p2_ != nil {
+		p2 = *p2_
+	}
+	if p3_ != nil {
+		p3 = *p3_
+	}
 
 	xMin := min(p0[0], p1[0], p2[0], p3[0])
 	xMax := max(p0[0], p1[0], p2[0], p3[0])
@@ -246,10 +252,17 @@ func (enc *PathEncoder) isZeroLengthSegment(p1 [2]float32, p2_, p3_ option[[2]fl
 	return !(xMax-xMin > epsilon || yMax-yMin > epsilon)
 }
 
-func (enc *PathEncoder) startTangentForCurve(p1 [2]float32, p2_, p3_ option[[2]float32]) ([2]float32, bool) {
+func (enc *PathEncoder) startTangentForCurve(p1 [2]float32, p2_, p3_ *[2]float32) ([2]float32, bool) {
 	p0 := [2]float32{enc.firstPoint[0], enc.firstPoint[1]}
-	p2 := p2_.unwrapOr(p0)
-	p3 := p3_.unwrapOr(p0)
+	p2 := p0
+	p3 := p0
+	if p2_ != nil {
+		p2 = *p2_
+	}
+	if p3_ != nil {
+		p3 = *p3_
+	}
+
 	if abs32(p1[0]-p0[0]) > epsilon || abs32(p1[1]-p0[1]) > epsilon {
 		return p1, true
 	} else if abs32(p2[0]-p0[0]) > epsilon || abs32(p2[1]-p0[1]) > epsilon {
@@ -275,8 +288,8 @@ func (enc *PathEncoder) LineTo(x, y float32) {
 		// Ensure that we don't end up with a zero-length start tangent.
 		if pt, ok := enc.startTangentForCurve(
 			[2]float32{x, y},
-			option[[2]float32]{},
-			option[[2]float32]{},
+			nil,
+			nil,
 		); ok {
 			enc.firstStartTangentEnd = pt
 		} else {
@@ -284,7 +297,7 @@ func (enc *PathEncoder) LineTo(x, y float32) {
 		}
 	}
 	// Drop the segment if its length is zero
-	if enc.isZeroLengthSegment([2]float32{x, y}, option[[2]float32]{}, option[[2]float32]{}) {
+	if enc.isZeroLengthSegment([2]float32{x, y}, nil, nil) {
 		return
 	}
 	var bytes [8]byte
@@ -306,14 +319,14 @@ func (enc *PathEncoder) QuadTo(x1, y1, x2, y2 float32) {
 	}
 	if enc.state == PathStateMoveTo {
 		// Ensure that we don't end up with a zero-length start tangent.
-		xy, ok := enc.startTangentForCurve([2]float32{x1, y1}, some([2]float32{x2, y2}), option[[2]float32]{})
+		xy, ok := enc.startTangentForCurve([2]float32{x1, y1}, &[2]float32{x2, y2}, &[2]float32{})
 		if !ok {
 			return
 		}
 		enc.firstStartTangentEnd = xy
 	}
 	// Drop the segment if its length is zero
-	if enc.isZeroLengthSegment([2]float32{x1, y1}, some([2]float32{x2, y2}), option[[2]float32]{}) {
+	if enc.isZeroLengthSegment([2]float32{x1, y1}, &[2]float32{x2, y2}, nil) {
 		return
 	}
 	var buf [16]byte
@@ -337,14 +350,14 @@ func (enc *PathEncoder) CubicTo(x1, y1, x2, y2, x3, y3 float32) {
 	}
 	if enc.state == PathStateMoveTo {
 		// Ensure that we don't end up with a zero-length start tangent.
-		xy, ok := enc.startTangentForCurve([2]float32{x1, y1}, some([2]float32{x2, y2}), some([2]float32{x3, y3}))
+		xy, ok := enc.startTangentForCurve([2]float32{x1, y1}, &[2]float32{x2, y2}, &[2]float32{x3, y3})
 		if !ok {
 			return
 		}
 		enc.firstStartTangentEnd = xy
 	}
 	// Drop the segment if its length is zero
-	if enc.isZeroLengthSegment([2]float32{x1, y1}, some([2]float32{x2, y2}), some([2]float32{x3, y3})) {
+	if enc.isZeroLengthSegment([2]float32{x1, y1}, &[2]float32{x2, y2}, &[2]float32{x3, y3}) {
 		return
 	}
 	var buf [24]byte

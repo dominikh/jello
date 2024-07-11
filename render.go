@@ -5,9 +5,9 @@ import (
 )
 
 type Render struct {
-	fineWgCount   option[WorkgroupSize]
-	fineResources option[fineResources]
-	maskBuf       option[ResourceProxy]
+	fineWgCount   WorkgroupSize
+	fineResources fineResources
+	maskBuf       ResourceProxy
 }
 
 type fineResources struct {
@@ -72,7 +72,7 @@ func (r *Render) RenderEncodingCoarse(
 		[]ResourceProxy{configBuf, sceneBuf, reducedBuf},
 	)
 	pathtagParent := reducedBuf
-	var largePathtagBufs option[[2]ResourceProxy]
+	var largePathtagBufs *[2]ResourceProxy
 	useLargePathScan := wgCounts.UseLargePathScan && !shaders.PathtagIsCPU
 	if useLargePathScan {
 		reduced2Buf := NewBufferProxy(
@@ -94,7 +94,7 @@ func (r *Render) RenderEncodingCoarse(
 			[]ResourceProxy{reducedBuf, reduced2Buf, reducedScanBuf},
 		)
 		pathtagParent = reducedScanBuf
-		largePathtagBufs.set([2]ResourceProxy{reduced2Buf, reducedScanBuf})
+		largePathtagBufs = &[2]ResourceProxy{reduced2Buf, reducedScanBuf}
 	}
 
 	tagmonoidBuf := NewBufferProxy(
@@ -113,9 +113,9 @@ func (r *Render) RenderEncodingCoarse(
 		[]ResourceProxy{configBuf, sceneBuf, pathtagParent, tagmonoidBuf},
 	)
 	recording.FreeResource(reducedBuf)
-	if largePathtagBufs.isSet {
-		recording.FreeResource(largePathtagBufs.value[0])
-		recording.FreeResource(largePathtagBufs.value[1])
+	if largePathtagBufs != nil {
+		recording.FreeResource(largePathtagBufs[0])
+		recording.FreeResource(largePathtagBufs[1])
 	}
 	pathBboxBuf := NewBufferProxy(
 		uint64(bufferSizes.PathBboxes.sizeInBytes()),
@@ -320,8 +320,8 @@ func (r *Render) RenderEncodingCoarse(
 	recording.FreeResource(binHeaderBuf)
 	recording.FreeResource(pathBuf)
 	outImage := NewImageProxy(params.Width, params.Height, Rgba8)
-	r.fineWgCount.set(wgCounts.Fine)
-	r.fineResources.set(fineResources{
+	r.fineWgCount = wgCounts.Fine
+	r.fineResources = fineResources{
 		aaConfig:       params.AntialiasingMethod,
 		configBuf:      configBuf,
 		bumpBuf:        bumpBuf,
@@ -332,7 +332,7 @@ func (r *Render) RenderEncodingCoarse(
 		infoBinDataBuf: infoBinDataBuf,
 		imageAtlas:     imageAtlas,
 		outImage:       outImage,
-	})
+	}
 	if robust {
 		recording.Download(bumpBuf)
 	}
@@ -341,8 +341,8 @@ func (r *Render) RenderEncodingCoarse(
 }
 
 func (r *Render) RecordFine(shaders *FullShaders, recording *Recording) {
-	fineWgCount := r.fineWgCount.take().unwrap()
-	fine := r.fineResources.take().unwrap()
+	fineWgCount := r.fineWgCount
+	fine := r.fineResources
 	switch fine.aaConfig {
 	case Area:
 		recording.Dispatch(
@@ -359,7 +359,7 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording) {
 			},
 		)
 	default:
-		if !r.maskBuf.isSet {
+		if r.maskBuf == nil {
 			var maskLUT []uint8
 			switch fine.aaConfig {
 			case Msaa16:
@@ -370,7 +370,7 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording) {
 				panic("unreachable")
 			}
 			buf := recording.Upload("mask lut", maskLUT)
-			r.maskBuf.set(buf)
+			r.maskBuf = buf
 		}
 		var fineShader ShaderID
 		switch fine.aaConfig {
@@ -393,7 +393,7 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording) {
 				fine.outImage,
 				fine.gradientImage,
 				fine.imageAtlas,
-				r.maskBuf.unwrap(),
+				r.maskBuf,
 			},
 		)
 	}
@@ -406,12 +406,12 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording) {
 	recording.FreeResource(fine.imageAtlas)
 	recording.FreeResource(fine.infoBinDataBuf)
 	// TODO: make mask buf persistent
-	maskBuf := r.maskBuf.take()
-	if maskBuf.isSet {
-		recording.FreeResource(maskBuf.value)
+	if r.maskBuf != nil {
+		recording.FreeResource(r.maskBuf)
+		r.maskBuf = nil
 	}
 }
 
 func (r *Render) OutImage() ImageProxy {
-	return r.fineResources.value.outImage
+	return r.fineResources.outImage
 }

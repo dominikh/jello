@@ -58,7 +58,7 @@ func (rec *Recording) Download(buf BufferProxy) {
 }
 
 func (rec *Recording) ClearAll(buf BufferProxy) {
-	rec.push(Clear{buf, 0, option[uint64]{}})
+	rec.push(Clear{buf, 0, -1})
 }
 
 func (rec *Recording) FreeBuffer(buf BufferProxy) {
@@ -203,7 +203,7 @@ type Download struct {
 type Clear struct {
 	Buffer BufferProxy
 	Offset uint64
-	Size   option[uint64]
+	Size   int64
 }
 
 type FreeBuffer struct {

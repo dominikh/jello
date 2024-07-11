@@ -46,23 +46,23 @@ func (be *BumpEstimator) Reset() {
 
 // impl BumpEstimator {
 // / Combine the counts of this estimator with `other` after applying an optional `transform`.
-func (be *BumpEstimator) Append(other *BumpEstimator, transform option[Transform]) {
+func (be *BumpEstimator) Append(other *BumpEstimator, transform *Transform) {
 	scale := transformScale(transform)
 	be.segments += uint32(math.Ceil(float64(other.segments) * scale))
 	be.lines.add(&other.lines, scale)
 }
 
-func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t Transform, stroke option[curve.Stroke]) {
+func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t Transform, stroke *curve.Stroke) {
 	caps := uint32(1)
 	fillCloseLines := uint32(1)
 	var joins, lineToLines, curveLines, curveCount, segments uint32
 
 	// Track the path state to correctly count empty paths and close joins.
 	var firstPt, lastPt option[curve.Point]
-	scale := transformScale(some(t))
+	scale := transformScale(&t)
 	var scaledWidth float64
-	if stroke.isSet {
-		scaledWidth = stroke.value.Width * scale
+	if stroke != nil {
+		scaledWidth = stroke.Width * scale
 	}
 	offsetFudge := max(1, math.Sqrt(scaledWidth))
 	for el := range path {
@@ -136,7 +136,7 @@ func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t Transfor
 		}
 	}
 
-	if !stroke.isSet {
+	if stroke == nil {
 		est.lines.linetos += lineToLines + fillCloseLines
 		est.lines.curves += curveLines
 		est.lines.curveCount += curveCount
@@ -148,7 +148,7 @@ func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t Transfor
 		}
 		return
 	}
-	style := stroke.value
+	style := *stroke
 
 	// For strokes, double-count the lines to estimate offset curves.
 	est.lines.linetos += 2 * lineToLines
@@ -162,7 +162,7 @@ func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t Transfor
 }
 
 // / Produce the final total, applying an optional transform to all content.
-func (est *BumpEstimator) Tally(transform option[Transform]) BumpAllocatorMemory {
+func (est *BumpEstimator) Tally(transform *Transform) BumpAllocatorMemory {
 	scale := transformScale(transform)
 
 	// The post-flatten line estimate.
@@ -274,9 +274,9 @@ func transform(t Transform, v curve.Vec2) curve.Vec2 {
 	)
 }
 
-func transformScale(t option[Transform]) float64 {
-	if t.isSet {
-		m := t.value.Matrix
+func transformScale(t *Transform) float64 {
+	if t != nil {
+		m := t.Matrix
 		v1x := float64(m[0]) + float64(m[3])
 		v2x := float64(m[0]) - float64(m[3])
 		v1y := float64(m[1]) - float64(m[2])

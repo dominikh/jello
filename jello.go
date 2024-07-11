@@ -29,32 +29,3 @@ func (opt option[T]) unwrap() T {
 	}
 	return opt.value
 }
-
-func (opt option[T]) unwrapOr(alt T) T {
-	if opt.isSet {
-		return opt.value
-	} else {
-		return alt
-	}
-}
-
-func (opt option[T]) expect(msg string) T {
-	if opt.isSet {
-		return opt.value
-	} else {
-		panic(msg)
-	}
-}
-
-func (opt *option[T]) take() option[T] {
-	out := *opt
-	opt.clear()
-	return out
-}
-
-func some[T any](v T) option[T] {
-	return option[T]{
-		isSet: true,
-		value: v,
-	}
-}
