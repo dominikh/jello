@@ -119,12 +119,6 @@ func (enc *Encoding) EncodePath(isFill bool) *PathEncoder {
 	}
 }
 
-func (enc *Encoding) EncodeShape(shape curve.Shape, isFill bool) bool {
-	pe := enc.EncodePath(isFill)
-	pe.Shape(shape)
-	return pe.Finish(true) != 0
-}
-
 func (enc *Encoding) EncodePathElements(path iter.Seq[curve.PathElement], isFill bool) bool {
 	pe := enc.EncodePath(isFill)
 	pe.PathElements(path)

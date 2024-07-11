@@ -1,6 +1,7 @@
 package jello
 
 import (
+	"iter"
 	"slices"
 
 	"honnef.co/go/brush"
@@ -39,17 +40,17 @@ func (s *Scene) PushLayer(
 	blend brush.BlendMode,
 	alpha float32,
 	transform curve.Affine,
-	clip curve.Shape,
+	clip iter.Seq[curve.PathElement],
 ) {
 	t := jmath.TransformFromKurbo(transform)
 	s.encoding.EncodeTransform(t)
 	s.encoding.EncodeFillStyle(brush.NonZero)
-	if !s.encoding.EncodeShape(clip, true) {
+	if !s.encoding.EncodePathElements(clip, true) {
 		// If the layer shape is invalid, encode a valid empty path. This suppresses
 		// all drawing until the layer is popped.
-		s.encoding.EncodeShape(curve.Rect{}, true)
+		s.encoding.EncodePathElements(curve.Rect{}.PathElements(0.1), true)
 	} else {
-		s.estimator.CountPath(clip.PathElements(0.1), t, nil)
+		s.estimator.CountPath(clip, t, nil)
 	}
 	s.encoding.EncodeBeginClip(blend, min(max(alpha, 0), 1))
 }
@@ -63,19 +64,19 @@ func (s *Scene) Fill(
 	transform curve.Affine,
 	brush brush.Brush,
 	brushTransform *curve.Affine,
-	shape curve.Shape,
+	path iter.Seq[curve.PathElement],
 ) {
 	t := jmath.TransformFromKurbo(transform)
 	s.encoding.EncodeTransform(t)
 	s.encoding.EncodeFillStyle(style)
-	if s.encoding.EncodeShape(shape, true) {
+	if s.encoding.EncodePathElements(path, true) {
 		if brushTransform != nil {
 			if s.encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(*brushTransform))) {
 				s.encoding.SwapLastPathTags()
 			}
 		}
 		s.encoding.EncodeBrush(brush, 1.0)
-		s.estimator.CountPath(shape.PathElements(0.1), t, nil)
+		s.estimator.CountPath(path, t, nil)
 	}
 }
 
@@ -84,7 +85,7 @@ func (s *Scene) Stroke(
 	transform curve.Affine,
 	b brush.Brush,
 	brushTransform *curve.Affine,
-	shape curve.Shape,
+	shape iter.Seq[curve.PathElement],
 ) {
 	// The setting for tolerance are a compromise. For most applications,
 	// shape tolerance doesn't matter, as the input is likely Bézier paths,
@@ -111,8 +112,8 @@ func (s *Scene) Stroke(
 		// objects.
 		var encodeResult bool
 		if len(style.DashPattern) == 0 {
-			s.estimator.CountPath(shape.PathElements(shapeTolerance), t, &style)
-			encodeResult = s.encoding.EncodeShape(shape, false)
+			s.estimator.CountPath(shape, t, &style)
+			encodeResult = s.encoding.EncodePathElements(shape, false)
 		} else {
 			// TODO: We currently collect the output of the dash iterator because
 			// `encode_path_elements` wants to consume the iterator. We want to avoid calling
@@ -120,7 +121,7 @@ func (s *Scene) Stroke(
 			// Bump estimation will move to resolve time rather than scene construction time,
 			// so we can revert this back to not collecting when that happens.
 			dashed := slices.Collect(curve.Dash(
-				shape.PathElements(shapeTolerance),
+				shape,
 				style.DashOffset,
 				style.DashPattern,
 			))
@@ -139,12 +140,12 @@ func (s *Scene) Stroke(
 		}
 	} else {
 		stroked := curve.StrokePath(
-			shape.PathElements(shapeTolerance),
+			shape,
 			style,
 			curve.StrokeOpts{},
 			strokeTolerance,
 		)
-		s.Fill(brush.NonZero, transform, b, brushTransform, &stroked)
+		s.Fill(brush.NonZero, transform, b, brushTransform, stroked.Elements())
 	}
 }
 

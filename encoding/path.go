@@ -389,10 +389,6 @@ func (enc *PathEncoder) Close() {
 	enc.state = PathStateStart
 }
 
-func (enc *PathEncoder) Shape(shape curve.Shape) {
-	enc.PathElements(shape.PathElements(0.1))
-}
-
 func (enc *PathEncoder) PathElements(path iter.Seq[curve.PathElement]) {
 	for el := range path {
 		switch el.Kind {
