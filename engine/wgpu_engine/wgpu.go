@@ -109,7 +109,7 @@ type transientBuf interface {
 	// One of []byte and wgpu.Buffer
 }
 
-func NewWGPUEngine(dev *wgpu.Device, options *RendererOptions) *Engine {
+func New(dev *wgpu.Device, options *RendererOptions) *Engine {
 	eng := &Engine{
 		Device: dev,
 		pool: resourcePool{
