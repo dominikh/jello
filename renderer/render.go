@@ -88,7 +88,13 @@ func (r *Render) RenderEncodingCoarse(
 	if ramps.Height == 0 {
 		gradientImage = NewImageProxy(1, 1, Rgba8)
 	} else {
-		panic("gradients not implemented")
+		data := safeish.SliceCast[[]byte](ramps.Data)
+		gradientImage = recording.UploadImage(
+			ramps.Width,
+			ramps.Height,
+			Rgba8,
+			data,
+		)
 	}
 	var imageAtlas ImageProxy
 	if len(images.Images) == 0 {

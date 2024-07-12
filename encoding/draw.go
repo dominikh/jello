@@ -1,6 +1,10 @@
 package encoding
 
-import "structs"
+import (
+	"structs"
+
+	"honnef.co/go/brush"
+)
 
 type DrawTag uint32
 
@@ -38,4 +42,35 @@ type drawColor struct {
 	_ structs.HostLayout
 
 	RGBA uint32
+}
+
+func newDrawColor(color brush.Color) drawColor {
+	return drawColor{RGBA: color.PremulUint32()}
+}
+
+type drawLinearGradient struct {
+	_ structs.HostLayout
+
+	Index uint32
+	P0    [2]float32
+	P1    [2]float32
+}
+
+type drawRadialGradient struct {
+	_ structs.HostLayout
+
+	Index uint32
+	P0    [2]float32
+	P1    [2]float32
+	R0    float32
+	R1    float32
+}
+
+type drawSweepGradient struct {
+	_ structs.HostLayout
+
+	Index uint32
+	P0    [2]float32
+	T0    float32
+	T1    float32
 }

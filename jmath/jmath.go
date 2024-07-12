@@ -105,3 +105,10 @@ func AlignUp(len int, alignment int) int {
 func AlignUp32(len uint32, alignment uint32) uint32 {
 	return (len + alignment - 1) & -alignment
 }
+
+func PointToF32(p curve.Point) [2]float32 {
+	return [2]float32{
+		float32(p.X),
+		float32(p.Y),
+	}
+}

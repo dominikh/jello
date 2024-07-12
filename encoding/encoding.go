@@ -2,6 +2,7 @@ package encoding
 
 import (
 	"encoding/binary"
+	"fmt"
 	"iter"
 	"math"
 	"slices"
@@ -9,16 +10,17 @@ import (
 	"honnef.co/go/brush"
 	"honnef.co/go/curve"
 	"honnef.co/go/jello/jmath"
+	"honnef.co/go/safeish"
 )
 
 type Encoding struct {
-	PathTags   []PathTag
-	PathData   []byte
-	DrawTags   []DrawTag
-	DrawData   []byte
-	Transforms []jmath.Transform
-	Styles     []Style
-	// Resources Resources
+	PathTags        []PathTag
+	PathData        []byte
+	DrawTags        []DrawTag
+	DrawData        []byte
+	Transforms      []jmath.Transform
+	Styles          []Style
+	Resources       Resources
 	NumPaths        uint32
 	NumPathSegments uint32
 	NumClips        uint32
@@ -134,9 +136,48 @@ func (enc *Encoding) EncodeBrush(b brush.Brush, alpha float32) {
 		} else {
 			color = b.Color.WithAlphaFactor(alpha)
 		}
-		enc.EncodeColor(drawColor{RGBA: color.PremulUint32()})
+		enc.EncodeColor(newDrawColor(color))
 	case brush.GradientBrush:
-		panic("unsupported")
+		switch g := b.Gradient.(type) {
+		case brush.LinearGradient:
+			enc.EncodeLinearGradient(
+				drawLinearGradient{
+					Index: 0,
+					P0:    jmath.PointToF32(g.Start),
+					P1:    jmath.PointToF32(g.End),
+				},
+				g.Stops,
+				alpha,
+				g.Extend,
+			)
+		case brush.RadialGradient:
+			enc.EncodeRadialGradient(
+				drawRadialGradient{
+					Index: 0,
+					P0:    jmath.PointToF32(g.StartCenter),
+					P1:    jmath.PointToF32(g.EndCenter),
+					R0:    g.StartRadius,
+					R1:    g.EndRadius,
+				},
+				g.Stops,
+				alpha,
+				g.Extend,
+			)
+		case brush.SweepGradient:
+			enc.EncodeSweepGradient(
+				drawSweepGradient{
+					Index: 0,
+					P0:    jmath.PointToF32(g.Center),
+					T0:    g.StartAngle / (2 * math.Pi),
+					T1:    g.EndAngle / (2 * math.Pi),
+				},
+				g.Stops,
+				alpha,
+				g.Extend,
+			)
+		default:
+			panic(fmt.Sprintf("unsupported gradient %T", g))
+		}
 	case brush.ImageBrush:
 		panic("unsupported")
 	}
@@ -147,9 +188,96 @@ func (enc *Encoding) EncodeColor(color drawColor) {
 	enc.DrawData = binary.LittleEndian.AppendUint32(enc.DrawData, color.RGBA)
 }
 
-// XXX EncodeLinearGradient
-// XXX EncodeRadialGradient
-// XXX EncodeSweepGradient
+func (enc *Encoding) addRamp(colorStops []brush.ColorStop, alpha float32, extend brush.Extend) {
+	if len(colorStops) < 2 {
+		panic("addRamp called with less than 2 color stops")
+	}
+
+	offset := len(enc.DrawData)
+	stopsStart := len(enc.Resources.ColorStops)
+	if alpha != 1.0 {
+		cp := make([]brush.ColorStop, len(colorStops))
+		copy(cp, colorStops)
+		for i := range cp {
+			cp[i] = cp[i].WithAlphaFactor(alpha)
+		}
+		colorStops = cp
+	}
+	enc.Resources.ColorStops = append(enc.Resources.ColorStops, colorStops...)
+	stopsEnd := len(enc.Resources.ColorStops)
+	enc.Resources.Patches = append(enc.Resources.Patches, RampPatch{
+		DrawDataOffset: offset,
+		Stops:          [2]int{stopsStart, stopsEnd},
+		Extend:         extend,
+	})
+}
+
+func (enc *Encoding) EncodeLinearGradient(
+	gradient drawLinearGradient,
+	colorStops []brush.ColorStop,
+	alpha float32,
+	extend brush.Extend,
+) {
+	switch len(colorStops) {
+	case 0:
+		enc.EncodeColor(drawColor{})
+	case 1:
+		enc.EncodeColor(newDrawColor(colorStops[0].Color.WithAlphaFactor(alpha)))
+	default:
+		enc.addRamp(colorStops, alpha, extend)
+		enc.DrawTags = append(enc.DrawTags, DrawTagLinearGradient)
+		enc.DrawData = append(enc.DrawData, safeish.AsBytes(&gradient)...)
+	}
+}
+
+func (enc *Encoding) EncodeRadialGradient(
+	gradient drawRadialGradient,
+	colorStops []brush.ColorStop,
+	alpha float32,
+	extend brush.Extend,
+) {
+	// Match Skia's epsilon for radii comparison
+	const skiaEpsilon = 1.0 / (1 << 12)
+	if gradient.P0 == gradient.P1 && jmath.Abs32(gradient.R0-gradient.R1) < skiaEpsilon {
+		enc.EncodeColor(drawColor{})
+		return
+	}
+
+	switch len(colorStops) {
+	case 0:
+		enc.EncodeColor(drawColor{})
+	case 1:
+		enc.EncodeColor(newDrawColor(colorStops[0].Color.WithAlphaFactor(alpha)))
+	default:
+		enc.addRamp(colorStops, alpha, extend)
+		enc.DrawTags = append(enc.DrawTags, DrawTagRadialGradient)
+		enc.DrawData = append(enc.DrawData, safeish.AsBytes(&gradient)...)
+	}
+}
+
+func (enc *Encoding) EncodeSweepGradient(
+	gradient drawSweepGradient,
+	colorStops []brush.ColorStop,
+	alpha float32,
+	extend brush.Extend,
+) {
+	const skiaDegenerateThreshold = 1.0 / (1 << 15)
+	if jmath.Abs32(gradient.T0-gradient.T1) < skiaDegenerateThreshold {
+		enc.EncodeColor(drawColor{})
+		return
+	}
+	switch len(colorStops) {
+	case 0:
+		enc.EncodeColor(drawColor{})
+	case 1:
+		enc.EncodeColor(newDrawColor(colorStops[0].Color.WithAlphaFactor(alpha)))
+	default:
+		enc.addRamp(colorStops, alpha, extend)
+		enc.DrawTags = append(enc.DrawTags, DrawTagSweepGradient)
+		enc.DrawData = append(enc.DrawData, safeish.AsBytes(&gradient)...)
+	}
+}
+
 // XXX EncodeImage
 
 func (enc *Encoding) EncodeBeginClip(blendMode brush.BlendMode, alpha float32) {
@@ -185,8 +313,6 @@ func (enc *Encoding) SwapLastPathTags() {
 	enc.PathTags[n-2], enc.PathTags[n-1] = enc.PathTags[n-1], enc.PathTags[n-2]
 }
 
-// XXX AddRamp
-
 type StreamOffsets struct {
 	// Current length of path tag stream.
 	PathTags int
@@ -212,3 +338,23 @@ func (so StreamOffsets) Add(oso StreamOffsets) StreamOffsets {
 		so.Styles + oso.Styles,
 	}
 }
+
+type Resources struct {
+	Patches    []Patch
+	ColorStops []brush.ColorStop
+	// XXX glyph stuff
+}
+
+// XXX the following types are in encoding/resolver.rs, but we put the resolver in renderer instead
+
+type Patch interface {
+	isPatch()
+}
+
+type RampPatch struct {
+	DrawDataOffset int
+	Stops          [2]int
+	Extend         brush.Extend
+}
+
+func (RampPatch) isPatch() {}

@@ -315,12 +315,13 @@ func (eng *Engine) RunRecording(
 				Format:        format,
 			})
 			textureView := texture.CreateView(&wgpu.TextureViewDescriptor{
-				Dimension:      wgpu.TextureViewDimension2D,
-				Aspect:         wgpu.TextureAspectAll,
-				MipLevelCount:  ^uint32(0),
-				BaseMipLevel:   0,
-				BaseArrayLayer: 0,
-				Format:         format,
+				Dimension:       wgpu.TextureViewDimension2D,
+				Aspect:          wgpu.TextureAspectAll,
+				MipLevelCount:   ^uint32(0),
+				ArrayLayerCount: ^uint32(0),
+				BaseMipLevel:    0,
+				BaseArrayLayer:  0,
+				Format:          format,
 			})
 			queue.WriteTexture(
 				&wgpu.ImageCopyTexture{
@@ -333,7 +334,7 @@ func (eng *Engine) RunRecording(
 				&wgpu.TextureDataLayout{
 					Offset:       0,
 					BytesPerRow:  imageProxy.Width * blockSize,
-					RowsPerImage: 0, // XXX 0 or Undefined?
+					RowsPerImage: ^uint32(0), // XXX 0 or Undefined?
 				},
 				&wgpu.Extent3D{
 					Width:              imageProxy.Width,

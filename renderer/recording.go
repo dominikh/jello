@@ -38,6 +38,12 @@ func (rec *Recording) UploadUniform(name string, data []byte) BufferProxy {
 	return buf
 }
 
+func (rec *Recording) UploadImage(width, height uint32, format ImageFormat, data []byte) ImageProxy {
+	imageProxy := NewImageProxy(width, height, format)
+	rec.Commands = append(rec.Commands, UploadImage{imageProxy, data})
+	return imageProxy
+}
+
 func (rec *Recording) Dispatch(shader ShaderID, wgSize [3]uint32, resources []ResourceProxy) {
 	rec.push(Dispatch{shader, wgSize, resources})
 }
