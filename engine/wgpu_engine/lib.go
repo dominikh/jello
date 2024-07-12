@@ -193,15 +193,20 @@ func (eng *Engine) RenderToTexture(
 	enc *encoding.Encoding,
 	texture *wgpu.TextureView,
 	params *renderer.RenderParams,
+	pgroup *ProfilerGroup,
 ) {
-	recording, target := renderer.RenderFull(enc, eng.resolver, eng.fullShaders, params)
+	pgroup = pgroup.Nest("RenderToTexture")
+	defer pgroup.End()
+
+	recording, target := renderer.RenderFull(enc, eng.resolver, eng.fullShaders, params, pgroup)
+
 	externalResources := []ExternalResource{
 		ExternalImage{
 			Proxy: target.(renderer.ImageProxy),
 			View:  texture,
 		},
 	}
-	eng.RunRecording(queue, recording, externalResources, "render_to_texture")
+	eng.RunRecording(queue, recording, externalResources, "render_to_texture", pgroup)
 }
 
 func (eng *Engine) RenderToSurface(
@@ -209,7 +214,11 @@ func (eng *Engine) RenderToSurface(
 	enc *encoding.Encoding,
 	surface *wgpu.SurfaceTexture,
 	params *renderer.RenderParams,
+	pgroup *ProfilerGroup,
 ) {
+	pgroup = pgroup.Nest("RenderToSurface")
+	defer pgroup.End()
+
 	width := params.Width
 	height := params.Height
 	if eng.target == nil {
@@ -219,10 +228,13 @@ func (eng *Engine) RenderToSurface(
 		eng.target = newTargetTexture(eng.Device, width, height)
 	}
 
-	eng.RenderToTexture(queue, enc, eng.target.View, params)
+	ency := eng.Device.CreateCommandEncoder(nil)
+	span := pgroup.Begin(ency, "total")
+	cmdy := ency.Finish(nil)
+	defer cmdy.Release()
+	queue.Submit(cmdy)
 
-	encoder := eng.Device.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "blitter"})
-	defer encoder.Release()
+	eng.RenderToTexture(queue, enc, eng.target.View, params, pgroup)
 
 	surfaceView := surface.Texture.CreateView(nil)
 	defer surfaceView.Release()
@@ -237,6 +249,9 @@ func (eng *Engine) RenderToSurface(
 		},
 	})
 	defer bindGroup.Release()
+
+	encoder := eng.Device.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "blitter"})
+	defer encoder.Release()
 	renderPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 		ColorAttachments: []wgpu.RenderPassColorAttachment{
 			{
@@ -246,18 +261,18 @@ func (eng *Engine) RenderToSurface(
 				ClearValue: wgpu.Color{0, 255, 0, 255},
 			},
 		},
+		TimestampWrites: pgroup.Render("blit"),
 	})
 	defer renderPass.Release()
 
-	// TODO profiling
 	renderPass.SetPipeline(eng.blit.Pipeline)
 	renderPass.SetBindGroup(0, bindGroup, nil)
 	renderPass.Draw(6, 1, 0, 0)
 	renderPass.End()
 
-	// TODO profiling
+	span.End(encoder)
 	cmd := encoder.Finish(nil)
 	defer cmd.Release()
 	queue.Submit(cmd)
-	// TODO profiling
+
 }

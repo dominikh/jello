@@ -3,6 +3,7 @@ package renderer
 import (
 	"honnef.co/go/brush"
 	"honnef.co/go/jello/encoding"
+	"honnef.co/go/jello/profiler"
 	"honnef.co/go/safeish"
 )
 
@@ -76,7 +77,11 @@ func (r *Render) RenderEncodingCoarse(
 	shaders *FullShaders,
 	params *RenderParams,
 	robust bool,
+	pgroup profiler.ProfilerGroup,
 ) *Recording {
+	pgroup = pgroup.Start("RenderEncodingCoarse")
+	defer pgroup.End()
+
 	var recording Recording
 	layout, ramps, images, packed := resolver.Resolve(encoding, nil)
 	var gradientImage ResourceProxy
@@ -385,7 +390,10 @@ func (r *Render) RenderEncodingCoarse(
 	return &recording
 }
 
-func (r *Render) RecordFine(shaders *FullShaders, recording *Recording) {
+func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup profiler.ProfilerGroup) {
+	pgroup = pgroup.Start("RecordFine")
+	defer pgroup.End()
+
 	fineWgCount := r.fineWgCount
 	fine := r.fineResources
 	switch fine.aaConfig {
@@ -466,19 +474,14 @@ func RenderFull(
 	resolver *Resolver,
 	shaders *FullShaders,
 	params *RenderParams,
+	pgroup profiler.ProfilerGroup,
 ) (*Recording, ResourceProxy) {
-	return RenderEncodingFull(enc, resolver, shaders, params)
-}
+	pgroup = pgroup.Start("RenderFull")
+	defer pgroup.End()
 
-func RenderEncodingFull(
-	encoding *encoding.Encoding,
-	resolver *Resolver,
-	shaders *FullShaders,
-	params *RenderParams,
-) (*Recording, ResourceProxy) {
 	var render Render
-	recording := render.RenderEncodingCoarse(encoding, resolver, shaders, params, false)
+	recording := render.RenderEncodingCoarse(enc, resolver, shaders, params, false, pgroup)
 	outImage := render.OutImage()
-	render.RecordFine(shaders, recording)
+	render.RecordFine(shaders, recording, pgroup)
 	return recording, outImage
 }

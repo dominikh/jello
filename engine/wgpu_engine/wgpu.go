@@ -261,8 +261,11 @@ func (eng *Engine) RunRecording(
 	recording *renderer.Recording,
 	externalResources []ExternalResource,
 	label string,
-	// TODO profiler
+	pgroup *ProfilerGroup,
 ) {
+	pgroup = pgroup.Nest("RunRecording")
+	defer pgroup.End()
+
 	freeBufs := map[renderer.ResourceID]struct{}{}
 	freeImages := map[renderer.ResourceID]struct{}{}
 	transientMap := newTransientBindMap(externalResources)
@@ -270,8 +273,6 @@ func (eng *Engine) RunRecording(
 	encoder := eng.Device.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: label})
 	defer encoder.Release()
 
-	// TODO profiler
-	// OPT release things after every command
 	for _, cmd := range recording.Commands {
 		switch cmd := cmd.(type) {
 		case renderer.Upload:
@@ -395,15 +396,16 @@ func (eng *Engine) RunRecording(
 				)
 				defer bindGroup.Release()
 
-				cpass := encoder.BeginComputePass(nil)
+				cpass := encoder.BeginComputePass(&wgpu.ComputePassDescriptor{
+					Label:           shader.Label,
+					TimestampWrites: pgroup.Compute(shader.Label),
+				})
 				defer cpass.Release()
 
-				// TODO profiling
 				cpass.SetPipeline(s.pipeline)
 				cpass.SetBindGroup(0, bindGroup, nil)
 				cpass.DispatchWorkgroups(wgSize[0], wgSize[1], wgSize[2])
 				cpass.End()
-				// TODO profiling
 			default:
 				panic(fmt.Sprintf("unhandled type %T", s))
 			}
@@ -437,10 +439,12 @@ func (eng *Engine) RunRecording(
 					proxy,
 				)
 
-				cpass := encoder.BeginComputePass(nil)
+				cpass := encoder.BeginComputePass(&wgpu.ComputePassDescriptor{
+					Label:           s.label,
+					TimestampWrites: pgroup.Compute(shader.Label),
+				})
 				defer cpass.Release()
 
-				// TODO profiling
 				cpass.SetPipeline(s.pipeline)
 				cpass.SetBindGroup(0, bindGroup, nil)
 				buf, ok := eng.bindMap.getGPUBuf(proxy.ID)
@@ -449,7 +453,6 @@ func (eng *Engine) RunRecording(
 				}
 				cpass.DispatchWorkgroupsIndirect(buf, offset)
 				cpass.End()
-				// TODO profiling
 			default:
 				panic(fmt.Sprintf("unhandled type %T", s))
 			}
@@ -496,7 +499,6 @@ func (eng *Engine) RunRecording(
 			panic(fmt.Sprintf("unhandled command %T", cmd))
 		}
 	}
-	// TODO profiling
 	cmd := encoder.Finish(nil)
 	defer cmd.Release()
 	queue.Submit(cmd)
