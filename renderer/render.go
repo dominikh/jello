@@ -408,9 +408,9 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording) {
 			var maskLUT []uint8
 			switch fine.aaConfig {
 			case Msaa16:
-				maskLUT = makeMaskLUT16()
+				maskLUT = maskLUT16
 			case Msaa8:
-				maskLUT = makeMaskLUT()
+				maskLUT = maskLUT8
 			default:
 				panic("unreachable")
 			}

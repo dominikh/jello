@@ -30,6 +30,9 @@ func oneMask(slope float64, translation float64, isPos bool) uint8 {
 	return result
 }
 
+var maskLUT8 = makeMaskLUT()
+var maskLUT16 = makeMaskLUT16()
+
 // / Make a lookup table of half-plane masks.
 // /
 // / The table is organized into two blocks each with `maskHeight/2` slopes.
