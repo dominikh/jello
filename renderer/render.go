@@ -1,7 +1,7 @@
 package renderer
 
 import (
-	"honnef.co/go/brush"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/encoding"
 	"honnef.co/go/jello/profiler"
 	"honnef.co/go/safeish"
@@ -50,7 +50,7 @@ const (
 )
 
 type RenderParams struct {
-	BaseColor          brush.Color
+	BaseColor          gfx.Color
 	Width              uint32
 	Height             uint32
 	AntialiasingMethod AaConfig

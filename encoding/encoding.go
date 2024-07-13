@@ -7,7 +7,7 @@ import (
 	"math"
 	"slices"
 
-	"honnef.co/go/brush"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/curve"
 	"honnef.co/go/jello/jmath"
 	"honnef.co/go/safeish"
@@ -84,7 +84,7 @@ func (enc *Encoding) StreamOffsets() StreamOffsets {
 	}
 }
 
-func (enc *Encoding) EncodeFillStyle(fill brush.Fill) {
+func (enc *Encoding) EncodeFillStyle(fill gfx.Fill) {
 	enc.EncodeStyle(styleFromFill(fill))
 }
 
@@ -127,19 +127,19 @@ func (enc *Encoding) EncodePathElements(path iter.Seq[curve.PathElement], isFill
 	return pe.Finish(true) != 0
 }
 
-func (enc *Encoding) EncodeBrush(b brush.Brush, alpha float32) {
+func (enc *Encoding) EncodeBrush(b gfx.Brush, alpha float32) {
 	switch b := b.(type) {
-	case brush.SolidBrush:
-		var color brush.Color
+	case gfx.SolidBrush:
+		var color gfx.Color
 		if alpha == 1.0 {
 			color = b.Color
 		} else {
 			color = b.Color.WithAlphaFactor(alpha)
 		}
 		enc.EncodeColor(newDrawColor(color))
-	case brush.GradientBrush:
+	case gfx.GradientBrush:
 		switch g := b.Gradient.(type) {
-		case brush.LinearGradient:
+		case gfx.LinearGradient:
 			enc.EncodeLinearGradient(
 				drawLinearGradient{
 					Index: 0,
@@ -150,7 +150,7 @@ func (enc *Encoding) EncodeBrush(b brush.Brush, alpha float32) {
 				alpha,
 				g.Extend,
 			)
-		case brush.RadialGradient:
+		case gfx.RadialGradient:
 			enc.EncodeRadialGradient(
 				drawRadialGradient{
 					Index: 0,
@@ -163,7 +163,7 @@ func (enc *Encoding) EncodeBrush(b brush.Brush, alpha float32) {
 				alpha,
 				g.Extend,
 			)
-		case brush.SweepGradient:
+		case gfx.SweepGradient:
 			enc.EncodeSweepGradient(
 				drawSweepGradient{
 					Index: 0,
@@ -178,7 +178,7 @@ func (enc *Encoding) EncodeBrush(b brush.Brush, alpha float32) {
 		default:
 			panic(fmt.Sprintf("unsupported gradient %T", g))
 		}
-	case brush.ImageBrush:
+	case gfx.ImageBrush:
 		panic("unsupported")
 	}
 }
@@ -188,7 +188,7 @@ func (enc *Encoding) EncodeColor(color drawColor) {
 	enc.DrawData = binary.LittleEndian.AppendUint32(enc.DrawData, color.RGBA)
 }
 
-func (enc *Encoding) addRamp(colorStops []brush.ColorStop, alpha float32, extend brush.Extend) {
+func (enc *Encoding) addRamp(colorStops []gfx.ColorStop, alpha float32, extend gfx.Extend) {
 	if len(colorStops) < 2 {
 		panic("addRamp called with less than 2 color stops")
 	}
@@ -196,7 +196,7 @@ func (enc *Encoding) addRamp(colorStops []brush.ColorStop, alpha float32, extend
 	offset := len(enc.DrawData)
 	stopsStart := len(enc.Resources.ColorStops)
 	if alpha != 1.0 {
-		cp := make([]brush.ColorStop, len(colorStops))
+		cp := make([]gfx.ColorStop, len(colorStops))
 		copy(cp, colorStops)
 		for i := range cp {
 			cp[i] = cp[i].WithAlphaFactor(alpha)
@@ -214,9 +214,9 @@ func (enc *Encoding) addRamp(colorStops []brush.ColorStop, alpha float32, extend
 
 func (enc *Encoding) EncodeLinearGradient(
 	gradient drawLinearGradient,
-	colorStops []brush.ColorStop,
+	colorStops []gfx.ColorStop,
 	alpha float32,
-	extend brush.Extend,
+	extend gfx.Extend,
 ) {
 	switch len(colorStops) {
 	case 0:
@@ -232,9 +232,9 @@ func (enc *Encoding) EncodeLinearGradient(
 
 func (enc *Encoding) EncodeRadialGradient(
 	gradient drawRadialGradient,
-	colorStops []brush.ColorStop,
+	colorStops []gfx.ColorStop,
 	alpha float32,
-	extend brush.Extend,
+	extend gfx.Extend,
 ) {
 	// Match Skia's epsilon for radii comparison
 	const skiaEpsilon = 1.0 / (1 << 12)
@@ -257,9 +257,9 @@ func (enc *Encoding) EncodeRadialGradient(
 
 func (enc *Encoding) EncodeSweepGradient(
 	gradient drawSweepGradient,
-	colorStops []brush.ColorStop,
+	colorStops []gfx.ColorStop,
 	alpha float32,
-	extend brush.Extend,
+	extend gfx.Extend,
 ) {
 	const skiaDegenerateThreshold = 1.0 / (1 << 15)
 	if jmath.Abs32(gradient.T0-gradient.T1) < skiaDegenerateThreshold {
@@ -280,7 +280,7 @@ func (enc *Encoding) EncodeSweepGradient(
 
 // XXX EncodeImage
 
-func (enc *Encoding) EncodeBeginClip(blendMode brush.BlendMode, alpha float32) {
+func (enc *Encoding) EncodeBeginClip(blendMode gfx.BlendMode, alpha float32) {
 	enc.DrawTags = append(enc.DrawTags, DrawTagBeginClip)
 	d1 := (uint32(blendMode.Mix) << 8) | uint32(blendMode.Compose)
 	d2 := alpha
@@ -341,7 +341,7 @@ func (so StreamOffsets) Add(oso StreamOffsets) StreamOffsets {
 
 type Resources struct {
 	Patches    []Patch
-	ColorStops []brush.ColorStop
+	ColorStops []gfx.ColorStop
 	// XXX glyph stuff
 }
 
@@ -354,7 +354,7 @@ type Patch interface {
 type RampPatch struct {
 	DrawDataOffset int
 	Stops          [2]int
-	Extend         brush.Extend
+	Extend         gfx.Extend
 }
 
 func (RampPatch) isPatch() {}

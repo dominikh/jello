@@ -6,7 +6,7 @@ import (
 	"math"
 	"structs"
 
-	"honnef.co/go/brush"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/curve"
 	"honnef.co/go/jello/jmath"
 )
@@ -54,9 +54,9 @@ const (
 	miterLimitMask    uint32 = 0xFFFF
 )
 
-func styleFromFill(fill brush.Fill) Style {
+func styleFromFill(fill gfx.Fill) Style {
 	var fillBit uint32
-	if fill == brush.EvenOdd {
+	if fill == gfx.EvenOdd {
 		fillBit = flagsFillBit
 	}
 	return Style{

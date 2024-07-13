@@ -1,7 +1,7 @@
 package renderer
 
 import (
-	"honnef.co/go/brush"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/safeish"
 )
 
@@ -38,7 +38,7 @@ func (rc *rampCache) maintain() {
 	}
 }
 
-func (rc *rampCache) add(stops []brush.ColorStop) uint32 {
+func (rc *rampCache) add(stops []gfx.ColorStop) uint32 {
 	key := string(safeish.SliceCast[[]byte](stops))
 	if entry, ok := rc.mapping[key]; ok {
 		entry.epoch = rc.epoch
@@ -82,7 +82,7 @@ func (rc *rampCache) ramps() Ramps {
 	}
 }
 
-func makeRamp(stops []brush.ColorStop) []uint32 {
+func makeRamp(stops []gfx.ColorStop) []uint32 {
 	// OPT(dh): this could be an iterator instead
 
 	out := make([]uint32, numSamples)
@@ -126,7 +126,7 @@ func makeRamp(stops []brush.ColorStop) []uint32 {
 
 type colorf64 [4]float64
 
-func colorF64FromColor(c brush.Color) colorf64 {
+func colorF64FromColor(c gfx.Color) colorf64 {
 	return colorf64{
 		float64(c.R) / 255.0,
 		float64(c.G) / 255.0,

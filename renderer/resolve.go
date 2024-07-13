@@ -5,7 +5,7 @@ import (
 	"slices"
 	"unsafe"
 
-	"honnef.co/go/brush"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/encoding"
 	"honnef.co/go/jello/jmath"
 	"honnef.co/go/safeish"
@@ -33,7 +33,7 @@ type ResolvedPatch interface {
 type ResolvedPatchRamp struct {
 	DrawDataOffset int
 	RampID         uint32
-	Extend         brush.Extend
+	Extend         gfx.Extend
 }
 
 func (ResolvedPatchRamp) isResolvedPatch() {}

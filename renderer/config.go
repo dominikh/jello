@@ -5,7 +5,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/exp/constraints"
-	"honnef.co/go/brush"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/jmath"
 )
 
@@ -81,7 +81,7 @@ type RenderConfig struct {
 	bufferSizes     BufferSizes
 }
 
-func NewRenderConfig(layout *Layout, width, height uint32, baseColor brush.Color) RenderConfig {
+func NewRenderConfig(layout *Layout, width, height uint32, baseColor gfx.Color) RenderConfig {
 	newWidth := nextMultipleOf(width, tileWidth)
 	newHeight := nextMultipleOf(height, tileHeight)
 	widthInTiles := newWidth / tileWidth

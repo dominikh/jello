@@ -3,7 +3,7 @@ package encoding
 import (
 	"structs"
 
-	"honnef.co/go/brush"
+	"honnef.co/go/jello/gfx"
 )
 
 type DrawTag uint32
@@ -44,7 +44,7 @@ type drawColor struct {
 	RGBA uint32
 }
 
-func newDrawColor(color brush.Color) drawColor {
+func newDrawColor(color gfx.Color) drawColor {
 	return drawColor{RGBA: color.PremulUint32()}
 }
 

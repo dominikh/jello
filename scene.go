@@ -4,7 +4,7 @@ import (
 	"iter"
 	"slices"
 
-	"honnef.co/go/brush"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/curve"
 	"honnef.co/go/jello/encoding"
 	"honnef.co/go/jello/jmath"
@@ -37,14 +37,14 @@ func (s *Scene) bumpEstimate(affine *curve.Affine) renderer.BumpAllocatorMemory 
 }
 
 func (s *Scene) PushLayer(
-	blend brush.BlendMode,
+	blend gfx.BlendMode,
 	alpha float32,
 	transform curve.Affine,
 	clip iter.Seq[curve.PathElement],
 ) {
 	t := jmath.TransformFromKurbo(transform)
 	s.encoding.EncodeTransform(t)
-	s.encoding.EncodeFillStyle(brush.NonZero)
+	s.encoding.EncodeFillStyle(gfx.NonZero)
 	if !s.encoding.EncodePathElements(clip, true) {
 		// If the layer shape is invalid, encode a valid empty path. This suppresses
 		// all drawing until the layer is popped.
@@ -60,9 +60,9 @@ func (s *Scene) PopLayer() {
 }
 
 func (s *Scene) Fill(
-	style brush.Fill,
+	style gfx.Fill,
 	transform curve.Affine,
-	brush brush.Brush,
+	brush gfx.Brush,
 	brushTransform *curve.Affine,
 	path iter.Seq[curve.PathElement],
 ) {
@@ -83,7 +83,7 @@ func (s *Scene) Fill(
 func (s *Scene) Stroke(
 	style curve.Stroke,
 	transform curve.Affine,
-	b brush.Brush,
+	b gfx.Brush,
 	brushTransform *curve.Affine,
 	shape iter.Seq[curve.PathElement],
 ) {
@@ -145,7 +145,7 @@ func (s *Scene) Stroke(
 			curve.StrokeOpts{},
 			strokeTolerance,
 		)
-		s.Fill(brush.NonZero, transform, b, brushTransform, stroked.Elements())
+		s.Fill(gfx.NonZero, transform, b, brushTransform, stroked.Elements())
 	}
 }
 
