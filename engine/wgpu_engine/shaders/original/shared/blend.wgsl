@@ -196,10 +196,10 @@ fn blend_mix(cb: vec3<f32>, cs: vec3<f32>, mode: u32) -> vec3<f32> {
 
 // Composition modes
 
-let COMPOSE_CLEAR = 0u;
+let COMPOSE_CLEAR = 3u;
 let COMPOSE_COPY = 1u;
 let COMPOSE_DEST = 2u;
-let COMPOSE_SRC_OVER = 3u;
+let COMPOSE_SRC_OVER = 0u;
 let COMPOSE_DEST_OVER = 4u;
 let COMPOSE_SRC_IN = 5u;
 let COMPOSE_DEST_IN = 6u;
