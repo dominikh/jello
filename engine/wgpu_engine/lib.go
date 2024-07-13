@@ -132,7 +132,7 @@ func newBlitPipeline(dev *wgpu.Device, format wgpu.TextureFormat) *blitPipeline 
 		},
 		Primitive: &wgpu.PrimitiveState{
 			Topology:         wgpu.PrimitiveTopologyTriangleList,
-			StripIndexFormat: ^wgpu.IndexFormat(0), // XXX 0 or Undefined?
+			StripIndexFormat: ^wgpu.IndexFormat(0),
 			FrontFace:        wgpu.FrontFaceCCW,
 			CullMode:         wgpu.CullModeBack,
 		},

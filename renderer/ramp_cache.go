@@ -5,8 +5,6 @@ import (
 	"honnef.co/go/safeish"
 )
 
-// XXX Vello has this in vello_encoding, we have it in renderer
-
 type Ramps struct {
 	Data   []uint32
 	Width  uint32

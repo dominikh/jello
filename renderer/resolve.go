@@ -1,7 +1,5 @@
 package renderer
 
-// XXX Vello has this file in the vello_encoding crate, we have it in the renderer
-
 import (
 	"encoding/binary"
 	"slices"
