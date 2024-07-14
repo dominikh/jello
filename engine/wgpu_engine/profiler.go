@@ -1,6 +1,7 @@
 package wgpu_engine
 
 import (
+	"fmt"
 	"time"
 
 	"honnef.co/go/jello/profiler"
@@ -72,6 +73,9 @@ type ProfilerGroup struct {
 }
 
 func (g *ProfilerGroup) End() {
+	if !g.cpuEnd.IsZero() {
+		panic(fmt.Sprintf("trying to end same group twice"))
+	}
 	g.cpuEnd = time.Now()
 }
 
