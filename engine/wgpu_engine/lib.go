@@ -92,7 +92,7 @@ func newBlitPipeline(dev *wgpu.Device, format wgpu.TextureFormat) *blitPipeline 
 				return vec4(rgba_sep.rgb * rgba_sep.a, rgba_sep.a);
 			}`
 
-	shader := dev.MustCreateShaderModule(wgpu.ShaderModuleDescriptor{
+	shader := dev.CreateShaderModule(wgpu.ShaderModuleDescriptor{
 		Label:  "blit shaders",
 		Source: wgpu.ShaderSourceWGSL(src),
 	})
@@ -113,7 +113,7 @@ func newBlitPipeline(dev *wgpu.Device, format wgpu.TextureFormat) *blitPipeline 
 		Label:            "blit pipeline layout",
 		BindGroupLayouts: []*wgpu.BindGroupLayout{bindLayout},
 	})
-	pipeline := dev.MustCreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+	pipeline := dev.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 		Label:  "blit pipeline",
 		Layout: pipelineLayout,
 		Vertex: &wgpu.VertexState{
@@ -258,7 +258,7 @@ func (eng *Engine) RenderToSurface(
 				View:       surfaceView,
 				LoadOp:     wgpu.LoadOpClear,
 				StoreOp:    wgpu.StoreOpStore,
-				ClearValue: wgpu.Color{0, 255, 0, 255},
+				ClearValue: wgpu.Color{R: 0, G: 255, B: 0, A: 255},
 			},
 		},
 		TimestampWrites: pgroup.Render("blit"),

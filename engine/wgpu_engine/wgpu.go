@@ -543,7 +543,8 @@ func (eng *Engine) createComputePipeline(
 	wgsl []byte,
 	entries []wgpu.BindGroupLayoutEntry,
 ) wgpuShader {
-	shaderModule := eng.Device.MustCreateShaderModule(wgpu.ShaderModuleDescriptor{
+	// OPT(dh): use SPIR-V instead of WGSL for faster engine creation.
+	shaderModule := eng.Device.CreateShaderModule(wgpu.ShaderModuleDescriptor{
 		Label:  label,
 		Source: wgpu.ShaderSourceWGSL(wgsl),
 	})
