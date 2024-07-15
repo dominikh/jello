@@ -7,6 +7,7 @@ import (
 	"golang.org/x/exp/constraints"
 	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/jmath"
+	"honnef.co/go/jello/mem"
 )
 
 type WorkgroupSize [3]uint32
@@ -81,7 +82,7 @@ type RenderConfig struct {
 	bufferSizes     BufferSizes
 }
 
-func NewRenderConfig(layout *Layout, width, height uint32, baseColor gfx.Color) RenderConfig {
+func NewRenderConfig(arena *mem.Arena, layout *Layout, width, height uint32, baseColor gfx.Color) *RenderConfig {
 	newWidth := nextMultipleOf(width, tileWidth)
 	newHeight := nextMultipleOf(height, tileHeight)
 	widthInTiles := newWidth / tileWidth
@@ -89,7 +90,8 @@ func NewRenderConfig(layout *Layout, width, height uint32, baseColor gfx.Color) 
 	numPathTags := layout.pathTagsSize()
 	workgroupCounts := NewWorkgroupCounts(layout, widthInTiles, heightInTiles, numPathTags)
 	bufferSizes := NewBufferSizes(layout, &workgroupCounts)
-	return RenderConfig{
+	out := mem.New[RenderConfig](arena)
+	*out = RenderConfig{
 		gpu: ConfigUniform{
 			WidthInTiles:  widthInTiles,
 			HeightInTiles: heightInTiles,
@@ -107,6 +109,7 @@ func NewRenderConfig(layout *Layout, width, height uint32, baseColor gfx.Color) 
 		workgroupCounts: workgroupCounts,
 		bufferSizes:     bufferSizes,
 	}
+	return out
 }
 
 func NewBufferSizes(layout *Layout, workgroups *WorkgroupCounts) BufferSizes {

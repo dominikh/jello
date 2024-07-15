@@ -30,14 +30,14 @@ func Make[T any](a *Arena, v T) *T {
 	return ptr
 }
 
-func NewSlice[T ~[]E, E any, Int constraints.Integer](a *Arena, len, cap Int) T {
+func NewSlice[T ~[]E, E any](a *Arena, len, cap int) T {
 	if cap == 0 {
 		return nil
 	}
 	// We cannot use TypeOf(*new(T)) when T is an interface type, because that
 	// passes a nil interface to TypeOf, which returns nil.
 	var e *E
-	ptr := a.alloc(reflect.TypeOf(e).Elem(), int(cap))
+	ptr := a.alloc(reflect.TypeOf(e).Elem(), cap)
 	return T(unsafe.Slice((*E)(ptr), cap)[:len])
 }
 
@@ -49,9 +49,20 @@ func MakeSlice[T ~[]E, E any](a *Arena, values T) T {
 	return s
 }
 
+func Varargs[E any](a *Arena, values ...E) []E {
+	return MakeSlice[[]E, E](a, values)
+}
+
 func Append[T ~[]E, E any](a *Arena, s T, data ...E) T {
 	s = growSlice(a, s, len(data))
 	s = append(s, data...)
+	return s
+}
+
+func Grow[T ~[]E, E any](a *Arena, s T, n int) T {
+	if n -= cap(s) - len(s); n > 0 {
+		s = growSlice(a, s, n)
+	}
 	return s
 }
 

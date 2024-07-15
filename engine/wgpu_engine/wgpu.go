@@ -73,8 +73,17 @@ type ExternalImage struct {
 	View  *wgpu.TextureView
 }
 
-type materializedBuffer interface {
-	// One of wgpu.Buffer and []byte
+type materializedBufferKind int
+
+const (
+	materializedBufferKindBytes materializedBufferKind = iota + 1
+	materializedBufferKindBuffer
+)
+
+type materializedBuffer struct {
+	kind   materializedBufferKind
+	bytes  []byte
+	buffer *wgpu.Buffer
 }
 
 type bindMapBuffer struct {
@@ -264,7 +273,7 @@ func (eng *Engine) addShader(
 func (eng *Engine) RunRecording(
 	arena *mem.Arena,
 	queue *wgpu.Queue,
-	recording *renderer.Recording,
+	recording renderer.Recording,
 	externalResources []ExternalResource,
 	label string,
 	pgroup *ProfilerGroup,
@@ -492,11 +501,12 @@ func (eng *Engine) RunRecording(
 			offset := cmd.Offset
 			size := cmd.Size
 			if buf, ok := bindMap.getBuf(proxy); ok {
-				switch b := buf.Buffer.(type) {
-				case *wgpu.Buffer:
-					encoder.ClearBuffer(b, offset, uint64(size))
-				case []byte:
-					slice := b[offset:]
+				b := &buf.Buffer
+				switch b.kind {
+				case materializedBufferKindBuffer:
+					encoder.ClearBuffer(b.buffer, offset, uint64(size))
+				case materializedBufferKindBytes:
+					slice := b.bytes[offset:]
 					if size >= 0 {
 						slice = slice[:size]
 					}
@@ -521,14 +531,15 @@ func (eng *Engine) RunRecording(
 
 	cmd := encoder.Finish(nil)
 	encoder.Release()
-	queue.Submit(cmd)
+	queue.Submit(mem.Varargs(arena, cmd)...)
 	cmd.Release()
 
 	for id := range freeBufs.Keys() {
 		buf, ok := bindMap.bufMap.Get(id)
 		if ok {
 			bindMap.bufMap.Delete(id)
-			if gpuBuf, ok := buf.Buffer.(*wgpu.Buffer); ok {
+			if buf.Buffer.kind == materializedBufferKindBuffer {
+				gpuBuf := buf.Buffer.buffer
 				props := bufferProperties{
 					size:   gpuBuf.Size(),
 					usages: gpuBuf.Usage(),
@@ -593,10 +604,10 @@ func (eng *Engine) createComputePipeline(
 }
 
 func (m *bindMap) insertBuf(arena *mem.Arena, proxy renderer.BufferProxy, buffer *wgpu.Buffer) {
-	m.bufMap.Insert(arena, proxy.ID, &bindMapBuffer{
-		Buffer: buffer,
+	m.bufMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapBuffer{
+		Buffer: materializedBuffer{kind: materializedBufferKindBuffer, buffer: buffer},
 		Label:  proxy.Name,
-	})
+	}))
 }
 
 func (m *bindMap) getGPUBuf(id renderer.ResourceID) (*wgpu.Buffer, bool) {
@@ -604,31 +615,33 @@ func (m *bindMap) getGPUBuf(id renderer.ResourceID) (*wgpu.Buffer, bool) {
 	if !ok {
 		return nil, false
 	}
-	buf, ok := mbuf.Buffer.(*wgpu.Buffer)
-	return buf, ok
+	if mbuf.Buffer.kind != materializedBufferKindBuffer {
+		return nil, false
+	}
+	buf := mbuf.Buffer.buffer
+	return buf, true
 }
 
 func (m *bindMap) getCPUBuf(id renderer.ResourceID) cpuBinding {
 	b, ok := m.bufMap.Get(id)
-	buf, ok := b.Buffer.([]byte)
-	if !ok {
+	if !ok || b.Buffer.kind != materializedBufferKindBytes {
 		panic("getting CPU buffer, but it's on GPU")
 	}
-	return cpuBufferRW(buf)
+	return cpuBufferRW(b.Buffer.bytes)
 }
 
 func (m *bindMap) materializeCPUBuf(arena *mem.Arena, proxy renderer.BufferProxy) {
 	if _, ok := m.bufMap.Get(proxy.ID); !ok {
 		buffer := make([]byte, proxy.Size)
-		m.bufMap.Insert(arena, proxy.ID, &bindMapBuffer{
-			Buffer: buffer,
+		m.bufMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapBuffer{
+			Buffer: materializedBuffer{kind: materializedBufferKindBytes, bytes: buffer},
 			Label:  proxy.Name,
-		})
+		}))
 	}
 }
 
 func (m *bindMap) insertImage(arena *mem.Arena, id renderer.ResourceID, image *wgpu.Texture, imageView *wgpu.TextureView) {
-	m.imageMap.Insert(arena, id, &bindMapImage{image, imageView})
+	m.imageMap.Insert(arena, id, mem.Make(arena, bindMapImage{image, imageView}))
 }
 
 func (m *bindMap) getBuf(proxy renderer.BufferProxy) (*bindMapBuffer, bool) {
@@ -667,9 +680,9 @@ func (m *bindMap) getOrCreateImage(
 		ArrayLayerCount: ^uint32(0),
 		Format:          imageFormatToWGPU(proxy.Format),
 	})
-	m.imageMap.Insert(arena, proxy.ID, &bindMapImage{
+	m.imageMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapImage{
 		texture, textureView,
-	})
+	}))
 
 	return texture, textureView
 }
@@ -718,17 +731,17 @@ func (b *bindMapBuffer) uploadIfNeeded(
 	queue *wgpu.Queue,
 	pool *resourcePool,
 ) {
-	cpuBuf, ok := b.Buffer.([]byte)
-	if !ok {
+	if b.Buffer.kind != materializedBufferKindBytes {
 		return
 	}
+	cpuBuf := b.Buffer.bytes
 	usage := wgpu.BufferUsageCopySrc |
 		wgpu.BufferUsageCopyDst |
 		wgpu.BufferUsageStorage |
 		wgpu.BufferUsageIndirect
 	buf := pool.getBuf(proxy.Size, proxy.Name, usage, dev)
 	queue.WriteBuffer(buf, 0, cpuBuf)
-	b.Buffer = buf
+	b.Buffer = materializedBuffer{kind: materializedBufferKindBuffer, buffer: buf}
 }
 
 func newTransientBindMap(arena *mem.Arena, externalResources []ExternalResource) transientBindMap {
@@ -792,10 +805,10 @@ func (m *transientBindMap) createBindGroup(
 					bindMap.pendingClears.Delete(proxy.BufferProxy.ID)
 					encoder.ClearBuffer(buf, 0, buf.Size())
 				}
-				bindMap.bufMap.Insert(arena, proxy.BufferProxy.ID, &bindMapBuffer{
-					Buffer: buf,
+				bindMap.bufMap.Insert(arena, proxy.BufferProxy.ID, mem.Make(arena, bindMapBuffer{
+					Buffer: materializedBuffer{kind: materializedBufferKindBuffer, buffer: buf},
 					Label:  proxy.Name,
-				})
+				}))
 			}
 		case renderer.ResourceProxyKindImage:
 			if _, ok := m.images.Get(proxy.ImageProxy.ID); ok {
@@ -827,9 +840,9 @@ func (m *transientBindMap) createBindGroup(
 				ArrayLayerCount: ^uint32(0),
 				Format:          imageFormatToWGPU(proxy.Format),
 			})
-			bindMap.imageMap.Insert(arena, proxy.ImageProxy.ID, &bindMapImage{
+			bindMap.imageMap.Insert(arena, proxy.ImageProxy.ID, mem.Make(arena, bindMapImage{
 				texture, textureView,
-			})
+			}))
 		default:
 			panic(fmt.Sprintf("unhandled type %d", proxy.Kind))
 		}

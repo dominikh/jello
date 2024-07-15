@@ -39,17 +39,24 @@ func NewProfiler(dev *wgpu.Device) *Profiler {
 	}
 }
 
+func NewNopProfiler() *Profiler {
+	return nil
+}
+
 func (p *Profiler) Start(tag uint64) *ProfilerGroup {
+	if p == nil {
+		return nil
+	}
+
 	g := p.getGroup()
 	// Don't use *g = ProfilerGroup{...} so that we reuse g.children and
 	// g.gpuQueries.
 	g.profiler = p
 	g.Tag = tag
-	g.set = &profilerQuerySet{set: p.getQuerySet()}
+	g.set = profilerQuerySet{set: p.getQuerySet()}
 	g.cpuStart = time.Now()
 	g.resolveBuf = p.getResolveBuffer()
 	g.mapBuf = p.getMapBuffer()
-	g.ch = make(chan error, 1)
 	p.groups = append(p.groups, g)
 	return g
 }
@@ -86,12 +93,13 @@ func (set *profilerQuerySet) nextID() uint32 {
 type ProfilerGroup struct {
 	Tag        uint64
 	Label      string
-	set        *profilerQuerySet
+	set        profilerQuerySet
 	cpuStart   time.Time
 	cpuEnd     time.Time
 	children   []*ProfilerGroup
 	gpuQueries []ProfilerQuery
 	profiler   *Profiler
+	parent     *ProfilerGroup
 
 	// set for top-level groups only
 	resolveBuf *wgpu.Buffer
@@ -100,10 +108,17 @@ type ProfilerGroup struct {
 }
 
 func (g *ProfilerGroup) End() {
+	if g == nil {
+		return
+	}
+
 	if !g.cpuEnd.IsZero() {
 		panic("trying to end same group twice")
 	}
 	g.cpuEnd = time.Now()
+	if g.parent != nil {
+		g.parent.set.id = g.set.id
+	}
 }
 
 // TODO(dh): having both Start and Nest sucks, but we need Start to implement
@@ -111,10 +126,16 @@ func (g *ProfilerGroup) End() {
 // direct dependency on wgpu.
 
 func (g *ProfilerGroup) Start(label string) profiler.ProfilerGroup {
+	if g == nil {
+		return (*ProfilerGroup)(nil)
+	}
 	return g.Nest(label)
 }
 
 func (g *ProfilerGroup) Nest(label string) *ProfilerGroup {
+	if g == nil {
+		return nil
+	}
 	cg := g.profiler.getGroup()
 	// Don't use *cg = ProfilerGroup{...} so that we reuse cg.children and
 	// cg.gpuQueries.
@@ -122,6 +143,7 @@ func (g *ProfilerGroup) Nest(label string) *ProfilerGroup {
 	cg.Label = label
 	cg.set = g.set
 	cg.cpuStart = time.Now()
+	cg.parent = g
 	g.children = append(g.children, cg)
 	return cg
 }
@@ -133,6 +155,9 @@ type ProfilerQuery struct {
 }
 
 func (g *ProfilerGroup) Compute(arena *mem.Arena, label string) *wgpu.ComputePassTimestampWrites {
+	if g == nil {
+		return nil
+	}
 	startID, endID := g.set.nextID(), g.set.nextID()
 	q := ProfilerQuery{
 		Label:   label,
@@ -149,6 +174,9 @@ func (g *ProfilerGroup) Compute(arena *mem.Arena, label string) *wgpu.ComputePas
 }
 
 func (g *ProfilerGroup) Render(arena *mem.Arena, label string) *wgpu.RenderPassTimestampWrites {
+	if g == nil {
+		return nil
+	}
 	startID, endID := g.set.nextID(), g.set.nextID()
 	q := ProfilerQuery{
 		Label:   label,
@@ -165,6 +193,9 @@ func (g *ProfilerGroup) Render(arena *mem.Arena, label string) *wgpu.RenderPassT
 }
 
 func (g *ProfilerGroup) Begin(enc *wgpu.CommandEncoder, label string) ProfilerSpan {
+	if g == nil {
+		return ProfilerSpan{}
+	}
 	startID, endID := g.set.nextID(), g.set.nextID()
 	q := ProfilerQuery{
 		Label:   label,
@@ -186,6 +217,9 @@ type ProfilerSpan struct {
 }
 
 func (span ProfilerSpan) End(enc *wgpu.CommandEncoder) {
+	if span.set == nil {
+		return
+	}
 	enc.WriteTimestamp(span.set, span.endID)
 }
 
@@ -226,6 +260,9 @@ func (p *Profiler) getMapBuffer() *wgpu.Buffer {
 }
 
 func (p *Profiler) Resolve(enc *wgpu.CommandEncoder) {
+	if p == nil {
+		return
+	}
 	for _, g := range p.groups {
 		enc.ResolveQuerySet(g.set.set, 0, g.set.id, g.resolveBuf, 0)
 		enc.CopyBufferToBuffer(g.resolveBuf, 0, g.mapBuf, 0, uint64(g.set.id)*16)
@@ -235,8 +272,11 @@ func (p *Profiler) Resolve(enc *wgpu.CommandEncoder) {
 }
 
 func (p *Profiler) Map() {
+	if p == nil {
+		return
+	}
 	for _, g := range p.resolvedGroups {
-		g.ch = g.mapBuf.Map(wgpu.MapModeRead, 0, int(g.set.id)*16)
+		g.ch = g.mapBuf.Map(p.dev, wgpu.MapModeRead, 0, int(g.set.id)*16)
 	}
 	p.mappedGroups = append(p.mappedGroups, p.resolvedGroups...)
 	clear(p.resolvedGroups)
@@ -292,6 +332,9 @@ func (p *Profiler) populateResult(g *ProfilerGroup, res *ProfilerResult, values 
 // Collect returns all available profiler results. The return value is only
 // valid until the next call to Collect.
 func (p *Profiler) Collect() []ProfilerResult {
+	if p == nil {
+		return nil
+	}
 	out := p.results[:0]
 
 	var returnGroups func(gs ...*ProfilerGroup)

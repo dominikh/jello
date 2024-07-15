@@ -235,7 +235,7 @@ func (eng *Engine) RenderToSurface(
 	span := pgroup.Begin(ency, "total")
 	cmdy := ency.Finish(nil)
 	defer cmdy.Release()
-	queue.Submit(cmdy)
+	queue.Submit(mem.Varargs(arena, cmdy)...)
 
 	eng.RenderToTexture(arena, queue, enc, eng.target.View, params, pgroup)
 
@@ -244,26 +244,26 @@ func (eng *Engine) RenderToSurface(
 
 	bindGroup := eng.Device.CreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: eng.blit.BindLayout,
-		Entries: []wgpu.BindGroupEntry{
+		Entries: mem.MakeSlice(arena, []wgpu.BindGroupEntry{
 			{
 				Binding:     0,
 				TextureView: eng.target.View,
 			},
-		},
+		}),
 	})
 	defer bindGroup.Release()
 
 	encoder := eng.Device.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "blitter"})
 	defer encoder.Release()
 	renderPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
-		ColorAttachments: []wgpu.RenderPassColorAttachment{
+		ColorAttachments: mem.MakeSlice(arena, []wgpu.RenderPassColorAttachment{
 			{
 				View:       surfaceView,
 				LoadOp:     wgpu.LoadOpClear,
 				StoreOp:    wgpu.StoreOpStore,
 				ClearValue: wgpu.Color{R: 0, G: 255, B: 0, A: 255},
 			},
-		},
+		}),
 		TimestampWrites: pgroup.Render(arena, "blit"),
 	})
 	defer renderPass.Release()
@@ -276,6 +276,6 @@ func (eng *Engine) RenderToSurface(
 	span.End(encoder)
 	cmd := encoder.Finish(nil)
 	defer cmd.Release()
-	queue.Submit(cmd)
+	queue.Submit(mem.Varargs(arena, cmd)...)
 
 }

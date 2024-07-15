@@ -1,6 +1,8 @@
 package renderer
 
 import (
+	"strings"
+
 	"honnef.co/go/jello/gfx"
 	"honnef.co/go/safeish"
 )
@@ -39,14 +41,15 @@ func (rc *rampCache) maintain() {
 }
 
 func (rc *rampCache) add(stops []gfx.ColorStop) uint32 {
-	key := string(safeish.SliceCast[[]byte](stops))
+	key := safeish.Cast[string](safeish.SliceCast[[]byte](stops))
 	if entry, ok := rc.mapping[key]; ok {
 		entry.epoch = rc.epoch
 		return entry.id
 	} else if len(rc.mapping) < retainedCount {
 		id := uint32(len(rc.data) / numSamples)
 		rc.data = append(rc.data, makeRamp(stops)...)
-		rc.mapping[key] = &rampCacheEntry{id, rc.epoch}
+		// Copy the key so it no longer aliases a slice
+		rc.mapping[strings.Clone(key)] = &rampCacheEntry{id, rc.epoch}
 		return id
 	} else {
 		var reuseID uint32

@@ -2,12 +2,12 @@ package renderer
 
 import (
 	"encoding/binary"
-	"slices"
 	"unsafe"
 
-	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/encoding"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/jmath"
+	"honnef.co/go/jello/mem"
 	"honnef.co/go/safeish"
 )
 
@@ -24,8 +24,15 @@ func NewResolver() *Resolver {
 	}
 }
 
-type ResolvedPatch interface {
-	isResolvedPatch()
+type ResolvedPatchKind int
+
+const (
+	ResolvedPatchKindRamp ResolvedPatchKind = iota + 1
+)
+
+type ResolvedPatch struct {
+	Kind ResolvedPatchKind
+	Ramp ResolvedPatchRamp
 }
 
 // XXX support glyphs and images
@@ -36,26 +43,24 @@ type ResolvedPatchRamp struct {
 	Extend         gfx.Extend
 }
 
-func (ResolvedPatchRamp) isResolvedPatch() {}
-
-func (r *Resolver) Resolve(enc *encoding.Encoding, packed []byte) (Layout, Ramps, Images, []byte) {
+func (r *Resolver) Resolve(arena *mem.Arena, enc *encoding.Encoding) (Layout, Ramps, Images, []byte) {
 	resources := enc.Resources
 	if len(resources.Patches) == 0 {
-		layout, packed := resolveSolidPathsOnly(enc, packed)
+		layout, packed := resolveSolidPathsOnly(arena, enc)
 		return layout, Ramps{}, Images{}, packed
 	}
 	// TODO(dh): check if we can deduplicate code between this function and resolveSolidPathsOnly
 
+	var data []byte
 	patchSizes := r.resolvePatches(enc)
 	// XXX support images
 	// r.resolvePendingImages()
-	data := packed[:0]
 	layout := Layout{
 		NumPaths: enc.NumPaths,
 		NumClips: enc.NumClips,
 	}
 	sbs := computeSceneBufferSizes(enc, &patchSizes)
-	data = slices.Grow(data, sbs.bufferSize)
+	data = mem.Grow(arena, data, sbs.bufferSize)
 	{
 		// Path tag stream
 		layout.PathTagBase = sizeToWords(len(data))
@@ -63,13 +68,13 @@ func (r *Resolver) Resolve(enc *encoding.Encoding, packed []byte) (Layout, Ramps
 		stream := enc.PathTags
 		// XXX glyph stuff
 		if pos < len(stream) {
-			data = append(data, safeish.SliceCast[[]byte](stream[pos:])...)
+			data = mem.Append(arena, data, safeish.SliceCast[[]byte](stream[pos:])...)
 		}
 		for range enc.NumOpenClips {
-			data = append(data, byte(encoding.PathTagPath))
+			data = mem.Append(arena, data, byte(encoding.PathTagPath))
 		}
 		if len(data) < sbs.pathTagPadded {
-			data = slices.Grow(data, sbs.pathTagPadded-len(data))[:sbs.pathTagPadded]
+			data = mem.Grow(arena, data, sbs.pathTagPadded-len(data))[:sbs.pathTagPadded]
 		} else {
 			data = data[:sbs.pathTagPadded]
 		}
@@ -81,7 +86,7 @@ func (r *Resolver) Resolve(enc *encoding.Encoding, packed []byte) (Layout, Ramps
 		stream := enc.PathData
 		// XXX glyph stuff
 		if pos < len(stream) {
-			data = append(data, safeish.SliceCast[[]byte](stream[pos:])...)
+			data = mem.Append(arena, data, safeish.SliceCast[[]byte](stream[pos:])...)
 		}
 	}
 	// Draw tag stream
@@ -93,9 +98,9 @@ func (r *Resolver) Resolve(enc *encoding.Encoding, packed []byte) (Layout, Ramps
 			sum += tag.InfoSize()
 		}
 		layout.BinDataStart = sum
-		data = append(data, safeish.SliceCast[[]byte](enc.DrawTags)...)
+		data = mem.Append(arena, data, safeish.SliceCast[[]byte](enc.DrawTags)...)
 		for range enc.NumOpenClips {
-			data = append(data, byte(encoding.DrawTagEndClip))
+			data = mem.Append(arena, data, byte(encoding.DrawTagEndClip))
 		}
 	}
 	{
@@ -105,18 +110,19 @@ func (r *Resolver) Resolve(enc *encoding.Encoding, packed []byte) (Layout, Ramps
 		stream := enc.DrawData
 		for _, patch := range r.patches {
 			// XXX support glyphs and images
-			switch patch := patch.(type) {
-			case ResolvedPatchRamp:
-				if pos < patch.DrawDataOffset {
-					data = append(data, enc.DrawData[pos:patch.DrawDataOffset]...)
+			switch patch.Kind {
+			case ResolvedPatchKindRamp:
+				if pos < patch.Ramp.DrawDataOffset {
+					data = mem.Append(arena, data, enc.DrawData[pos:patch.Ramp.DrawDataOffset]...)
 				}
-				indexMode := (patch.RampID << 2) | uint32(patch.Extend)
+				indexMode := (patch.Ramp.RampID << 2) | uint32(patch.Ramp.Extend)
+				data = mem.Grow(arena, data, 4)
 				data = binary.LittleEndian.AppendUint32(data, indexMode)
-				pos = patch.DrawDataOffset + 4
+				pos = patch.Ramp.DrawDataOffset + 4
 			}
 		}
 		if pos < len(stream) {
-			data = append(data, safeish.SliceCast[[]byte](stream[pos:])...)
+			data = mem.Append(arena, data, safeish.SliceCast[[]byte](stream[pos:])...)
 		}
 	}
 	{
@@ -126,7 +132,7 @@ func (r *Resolver) Resolve(enc *encoding.Encoding, packed []byte) (Layout, Ramps
 		stream := enc.Transforms
 		// XXX glyph stuff
 		if pos < len(stream) {
-			data = append(data, safeish.SliceCast[[]byte](stream[pos:])...)
+			data = mem.Append(arena, data, safeish.SliceCast[[]byte](stream[pos:])...)
 		}
 	}
 	{
@@ -136,7 +142,7 @@ func (r *Resolver) Resolve(enc *encoding.Encoding, packed []byte) (Layout, Ramps
 		stream := enc.Styles
 		// XXX glyph stuff
 		if pos < len(stream) {
-			data = append(data, safeish.SliceCast[[]byte](stream[pos:])...)
+			data = mem.Append(arena, data, safeish.SliceCast[[]byte](stream[pos:])...)
 		}
 	}
 	// XXX glyph stuff
@@ -163,21 +169,23 @@ func (r *Resolver) resolvePatches(enc *encoding.Encoding) encoding.StreamOffsets
 		switch patch := patch.(type) {
 		case encoding.RampPatch:
 			rampID := r.rampCache.add(resources.ColorStops[patch.Stops[0]:patch.Stops[1]])
-			r.patches = append(r.patches, ResolvedPatchRamp{
-				DrawDataOffset: patch.DrawDataOffset + sizes.DrawData,
-				RampID:         rampID,
-				Extend:         patch.Extend,
+			r.patches = append(r.patches, ResolvedPatch{
+				Kind: ResolvedPatchKindRamp,
+				Ramp: ResolvedPatchRamp{
+					DrawDataOffset: patch.DrawDataOffset + sizes.DrawData,
+					RampID:         rampID,
+					Extend:         patch.Extend,
+				},
 			})
 		}
 	}
 	return sizes
 }
 
-func resolveSolidPathsOnly(enc *encoding.Encoding, data []byte) (Layout, []byte) {
+func resolveSolidPathsOnly(arena *mem.Arena, enc *encoding.Encoding) (Layout, []byte) {
 	if len(enc.Resources.Patches) != 0 {
 		panic("this function doesn't support late bound resources")
 	}
-	data = data[:0]
 	layout := Layout{
 		NumPaths: enc.NumPaths,
 		NumClips: enc.NumClips,
@@ -185,41 +193,42 @@ func resolveSolidPathsOnly(enc *encoding.Encoding, data []byte) (Layout, []byte)
 	sbs := computeSceneBufferSizes(enc, &encoding.StreamOffsets{})
 	bufferSize := sbs.bufferSize
 	pathTagPadded := sbs.pathTagPadded
-	data = slices.Grow(data, bufferSize)
+	data := mem.NewSlice[[]byte](arena, 0, bufferSize)
 	// Path tag stream
 	layout.PathTagBase = sizeToWords(len(data))
 
-	data = append(data, safeish.SliceCast[[]byte](enc.PathTags)...)
+	data = mem.Append(arena, data, safeish.SliceCast[[]byte](enc.PathTags)...)
 	for range enc.NumOpenClips {
-		data = append(data, byte(encoding.PathTagPath))
+		data = mem.Append(arena, data, byte(encoding.PathTagPath))
 	}
 	if len(data) < pathTagPadded {
-		data = slices.Grow(data, pathTagPadded-len(data))[:pathTagPadded]
+		data = mem.Grow(arena, data, pathTagPadded-len(data))[:pathTagPadded]
 	} else if len(data) > pathTagPadded {
 		data = data[:pathTagPadded]
 	}
 	// Path data stream
 	layout.PathDataBase = sizeToWords(len(data))
-	data = append(data, enc.PathData...)
+	data = mem.Append(arena, data, enc.PathData...)
 	// Draw tag stream
 	layout.DrawTagBase = sizeToWords(len(data))
 	// Bin data follows draw info
 	for _, tag := range enc.DrawTags {
 		layout.BinDataStart += tag.InfoSize()
 	}
-	data = append(data, safeish.SliceCast[[]byte](enc.DrawTags)...)
+	data = mem.Append(arena, data, safeish.SliceCast[[]byte](enc.DrawTags)...)
 	for range enc.NumOpenClips {
+		data = mem.Grow(arena, data, 4)
 		data = binary.LittleEndian.AppendUint32(data, uint32(encoding.DrawTagEndClip))
 	}
 	// Draw data stream
 	layout.DrawDataBase = sizeToWords(len(data))
-	data = append(data, enc.DrawData...)
+	data = mem.Append(arena, data, enc.DrawData...)
 	// Transform stream
 	layout.TransformBase = sizeToWords(len(data))
-	data = append(data, safeish.SliceCast[[]byte](enc.Transforms)...)
+	data = mem.Append(arena, data, safeish.SliceCast[[]byte](enc.Transforms)...)
 	// Style stream
 	layout.StyleBase = sizeToWords(len(data))
-	data = append(data, safeish.SliceCast[[]byte](enc.Styles)...)
+	data = mem.Append(arena, data, safeish.SliceCast[[]byte](enc.Styles)...)
 	layout.NumDrawObjects = layout.NumPaths
 	if bufferSize != len(data) {
 		panic("invalid encoding")

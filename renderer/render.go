@@ -80,12 +80,12 @@ func (r *Render) RenderEncodingCoarse(
 	params *RenderParams,
 	robust bool,
 	pgroup profiler.ProfilerGroup,
-) *Recording {
+) Recording {
 	pgroup = pgroup.Start("RenderEncodingCoarse")
 	defer pgroup.End()
 
 	var recording Recording
-	layout, ramps, images, packed := resolver.Resolve(encoding, nil)
+	layout, ramps, images, packed := resolver.Resolve(arena, encoding)
 	var gradientImage ImageProxy
 	if ramps.Height == 0 {
 		gradientImage = NewImageProxy(1, 1, Rgba8)
@@ -107,7 +107,7 @@ func (r *Render) RenderEncodingCoarse(
 	}
 	// XXX write images to atlas
 
-	cpuConfig := NewRenderConfig(&layout, params.Width, params.Height, params.BaseColor)
+	cpuConfig := NewRenderConfig(arena, &layout, params.Width, params.Height, params.BaseColor)
 	bufferSizes := &cpuConfig.bufferSizes
 	wgCounts := &cpuConfig.workgroupCounts
 
@@ -414,10 +414,10 @@ func (r *Render) RenderEncodingCoarse(
 		recording.Download(arena, bumpBuf)
 	}
 	recording.FreeResource(arena, bumpBuf.Resource())
-	return &recording
+	return recording
 }
 
-func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording *Recording, pgroup profiler.ProfilerGroup) {
+func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording Recording, pgroup profiler.ProfilerGroup) Recording {
 	pgroup = pgroup.Start("RecordFine")
 	defer pgroup.End()
 
@@ -492,6 +492,8 @@ func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording *R
 		recording.FreeResource(arena, r.maskBuf)
 		r.maskBuf = ResourceProxy{}
 	}
+
+	return recording
 }
 
 func (r *Render) OutImage() ImageProxy {
@@ -505,13 +507,13 @@ func RenderFull(
 	shaders *FullShaders,
 	params *RenderParams,
 	pgroup profiler.ProfilerGroup,
-) (*Recording, ResourceProxy) {
+) (Recording, ResourceProxy) {
 	pgroup = pgroup.Start("RenderFull")
 	defer pgroup.End()
 
 	var render Render
 	recording := render.RenderEncodingCoarse(arena, enc, resolver, shaders, params, false, pgroup)
 	outImage := render.OutImage()
-	render.RecordFine(arena, shaders, recording, pgroup)
+	recording = render.RecordFine(arena, shaders, recording, pgroup)
 	return recording, outImage.Resource()
 }
