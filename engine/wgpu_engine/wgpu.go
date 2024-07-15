@@ -413,7 +413,7 @@ func (eng *Engine) RunRecording(
 
 				cpass := encoder.BeginComputePass(mem.Make(arena, wgpu.ComputePassDescriptor{
 					Label:           shader.Label,
-					TimestampWrites: pgroup.Compute(shader.Label),
+					TimestampWrites: pgroup.Compute(arena, shader.Label),
 				}))
 
 				cpass.SetPipeline(s.pipeline)
@@ -457,7 +457,7 @@ func (eng *Engine) RunRecording(
 
 				cpass := encoder.BeginComputePass(mem.Make(arena, wgpu.ComputePassDescriptor{
 					Label:           s.label,
-					TimestampWrites: pgroup.Compute(shader.Label),
+					TimestampWrites: pgroup.Compute(arena, shader.Label),
 				}))
 
 				cpass.SetPipeline(s.pipeline)

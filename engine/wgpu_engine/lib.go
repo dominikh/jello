@@ -264,7 +264,7 @@ func (eng *Engine) RenderToSurface(
 				ClearValue: wgpu.Color{R: 0, G: 255, B: 0, A: 255},
 			},
 		},
-		TimestampWrites: pgroup.Render("blit"),
+		TimestampWrites: pgroup.Render(arena, "blit"),
 	})
 	defer renderPass.Release()
 

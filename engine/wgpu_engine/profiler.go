@@ -1,9 +1,9 @@
 package wgpu_engine
 
 import (
-	"fmt"
 	"time"
 
+	"honnef.co/go/jello/mem"
 	"honnef.co/go/jello/profiler"
 	"honnef.co/go/safeish"
 	"honnef.co/go/wgpu"
@@ -18,6 +18,8 @@ type Profiler struct {
 	groups         []*ProfilerGroup
 	resolvedGroups []*ProfilerGroup
 	mappedGroups   []*ProfilerGroup
+	// slice to reuse for next frame
+	spare []*ProfilerGroup
 
 	// free list of query sets
 	querySets []*wgpu.QuerySet
@@ -25,6 +27,10 @@ type Profiler struct {
 	resolveBuffers []*wgpu.Buffer
 	// free list of buffers
 	mapBuffers []*wgpu.Buffer
+	// free list of profiler groups
+	freeGroups []*ProfilerGroup
+	// free list of profiler results
+	results []ProfilerResult
 }
 
 func NewProfiler(dev *wgpu.Device) *Profiler {
@@ -34,16 +40,36 @@ func NewProfiler(dev *wgpu.Device) *Profiler {
 }
 
 func (p *Profiler) Start(tag uint64) *ProfilerGroup {
-	g := &ProfilerGroup{
-		Tag:        tag,
-		set:        &profilerQuerySet{set: p.getQuerySet()},
-		cpuStart:   time.Now(),
-		resolveBuf: p.getResolveBuffer(),
-		mapBuf:     p.getMapBuffer(),
-		ch:         make(chan error, 1),
-	}
+	g := p.getGroup()
+	// Don't use *g = ProfilerGroup{...} so that we reuse g.children and
+	// g.gpuQueries.
+	g.profiler = p
+	g.Tag = tag
+	g.set = &profilerQuerySet{set: p.getQuerySet()}
+	g.cpuStart = time.Now()
+	g.resolveBuf = p.getResolveBuffer()
+	g.mapBuf = p.getMapBuffer()
+	g.ch = make(chan error, 1)
 	p.groups = append(p.groups, g)
 	return g
+}
+
+func (p *Profiler) getGroup() *ProfilerGroup {
+	if len(p.freeGroups) > 0 {
+		g := p.freeGroups[len(p.freeGroups)-1]
+		p.freeGroups = p.freeGroups[:len(p.freeGroups)-1]
+		clear(g.children)
+		clear(g.gpuQueries)
+		g.children = g.children[:0]
+		g.gpuQueries = g.gpuQueries[:0]
+		g.cpuEnd = time.Time{}
+		g.resolveBuf = nil
+		g.mapBuf = nil
+		g.ch = nil
+		return g
+	} else {
+		return &ProfilerGroup{}
+	}
 }
 
 type profilerQuerySet struct {
@@ -65,6 +91,7 @@ type ProfilerGroup struct {
 	cpuEnd     time.Time
 	children   []*ProfilerGroup
 	gpuQueries []ProfilerQuery
+	profiler   *Profiler
 
 	// set for top-level groups only
 	resolveBuf *wgpu.Buffer
@@ -74,7 +101,7 @@ type ProfilerGroup struct {
 
 func (g *ProfilerGroup) End() {
 	if !g.cpuEnd.IsZero() {
-		panic(fmt.Sprintf("trying to end same group twice"))
+		panic("trying to end same group twice")
 	}
 	g.cpuEnd = time.Now()
 }
@@ -88,11 +115,13 @@ func (g *ProfilerGroup) Start(label string) profiler.ProfilerGroup {
 }
 
 func (g *ProfilerGroup) Nest(label string) *ProfilerGroup {
-	cg := &ProfilerGroup{
-		Label:    label,
-		set:      g.set,
-		cpuStart: time.Now(),
-	}
+	cg := g.profiler.getGroup()
+	// Don't use *cg = ProfilerGroup{...} so that we reuse cg.children and
+	// cg.gpuQueries.
+	cg.profiler = g.profiler
+	cg.Label = label
+	cg.set = g.set
+	cg.cpuStart = time.Now()
 	g.children = append(g.children, cg)
 	return cg
 }
@@ -103,7 +132,7 @@ type ProfilerQuery struct {
 	endID   uint32
 }
 
-func (g *ProfilerGroup) Compute(label string) *wgpu.ComputePassTimestampWrites {
+func (g *ProfilerGroup) Compute(arena *mem.Arena, label string) *wgpu.ComputePassTimestampWrites {
 	startID, endID := g.set.nextID(), g.set.nextID()
 	q := ProfilerQuery{
 		Label:   label,
@@ -112,14 +141,14 @@ func (g *ProfilerGroup) Compute(label string) *wgpu.ComputePassTimestampWrites {
 	}
 	g.gpuQueries = append(g.gpuQueries, q)
 
-	return &wgpu.ComputePassTimestampWrites{
+	return mem.Make(arena, wgpu.ComputePassTimestampWrites{
 		QuerySet:                  g.set.set,
 		BeginningOfPassWriteIndex: startID,
 		EndOfPassWriteIndex:       endID,
-	}
+	})
 }
 
-func (g *ProfilerGroup) Render(label string) *wgpu.RenderPassTimestampWrites {
+func (g *ProfilerGroup) Render(arena *mem.Arena, label string) *wgpu.RenderPassTimestampWrites {
 	startID, endID := g.set.nextID(), g.set.nextID()
 	q := ProfilerQuery{
 		Label:   label,
@@ -128,11 +157,11 @@ func (g *ProfilerGroup) Render(label string) *wgpu.RenderPassTimestampWrites {
 	}
 	g.gpuQueries = append(g.gpuQueries, q)
 
-	return &wgpu.RenderPassTimestampWrites{
+	return mem.Make(arena, wgpu.RenderPassTimestampWrites{
 		QuerySet:                  g.set.set,
 		BeginningOfPassWriteIndex: startID,
 		EndOfPassWriteIndex:       endID,
-	}
+	})
 }
 
 func (g *ProfilerGroup) Begin(enc *wgpu.CommandEncoder, label string) ProfilerSpan {
@@ -202,8 +231,7 @@ func (p *Profiler) Resolve(enc *wgpu.CommandEncoder) {
 		enc.CopyBufferToBuffer(g.resolveBuf, 0, g.mapBuf, 0, uint64(g.set.id)*16)
 	}
 	p.resolvedGroups = p.groups
-	// OPT(dh): keep a pool of slices to reuse
-	p.groups = nil
+	p.groups = p.spare[:0]
 }
 
 func (p *Profiler) Map() {
@@ -211,8 +239,8 @@ func (p *Profiler) Map() {
 		g.ch = g.mapBuf.Map(wgpu.MapModeRead, 0, int(g.set.id)*16)
 	}
 	p.mappedGroups = append(p.mappedGroups, p.resolvedGroups...)
-	// OPT(dh): keep a pool of slices to reuse
-	p.resolvedGroups = nil
+	clear(p.resolvedGroups)
+	p.spare = p.resolvedGroups[:0]
 }
 
 type ProfilerResult struct {
@@ -231,13 +259,21 @@ type ProfilerQueryResult struct {
 }
 
 func (p *Profiler) populateResult(g *ProfilerGroup, res *ProfilerResult, values []uint64) {
-	*res = ProfilerResult{
-		Tag:      g.Tag,
-		Label:    g.Label,
-		CPUStart: g.cpuStart,
-		CPUEnd:   g.cpuEnd,
-		Queries:  make([]ProfilerQueryResult, len(g.gpuQueries)),
-		Children: make([]ProfilerResult, len(g.children)),
+	// Don't use *res = ProfilerResult{...} so that we reuse res.Children and
+	// c.Queries.
+	res.Tag = g.Tag
+	res.Label = g.Label
+	res.CPUStart = g.cpuStart
+	res.CPUEnd = g.cpuEnd
+	if cap(res.Queries) >= len(g.gpuQueries) {
+		res.Queries = res.Queries[:len(g.gpuQueries)]
+	} else {
+		res.Queries = make([]ProfilerQueryResult, len(g.gpuQueries))
+	}
+	if cap(res.Children) >= len(g.children) {
+		res.Children = res.Children[:len(g.children)]
+	} else {
+		res.Children = make([]ProfilerResult, len(g.children))
 	}
 
 	for qi, q := range g.gpuQueries {
@@ -253,8 +289,18 @@ func (p *Profiler) populateResult(g *ProfilerGroup, res *ProfilerResult, values 
 	}
 }
 
+// Collect returns all available profiler results. The return value is only
+// valid until the next call to Collect.
 func (p *Profiler) Collect() []ProfilerResult {
-	var out []ProfilerResult
+	out := p.results[:0]
+
+	var returnGroups func(gs ...*ProfilerGroup)
+	returnGroups = func(gs ...*ProfilerGroup) {
+		p.freeGroups = append(p.freeGroups, gs...)
+		for _, g := range gs {
+			returnGroups(g.children...)
+		}
+	}
 
 	for i, g := range p.mappedGroups {
 		select {
@@ -262,7 +308,11 @@ func (p *Profiler) Collect() []ProfilerResult {
 			if err != nil {
 				panic(err)
 			}
-			out = append(out, ProfilerResult{})
+			if cap(out) > len(out) {
+				out = out[:len(out)+1]
+			} else {
+				out = append(out, ProfilerResult{})
+			}
 			data := safeish.SliceCast[[]uint64](g.mapBuf.ReadOnlyMappedRange(0, int(g.set.id)*16))
 			p.populateResult(g, &out[len(out)-1], data)
 			g.mapBuf.Unmap()
@@ -272,14 +322,18 @@ func (p *Profiler) Collect() []ProfilerResult {
 		default:
 			// We stop at the first missing group so that we return groups in
 			// order of creation.
+			returnGroups(p.mappedGroups[:i]...)
 			copy(p.mappedGroups, p.mappedGroups[i:])
 			clear(p.mappedGroups[len(p.mappedGroups)-i:])
 			p.mappedGroups = p.mappedGroups[:len(p.mappedGroups)-i]
+			p.results = out[:0]
 			return out
 		}
 	}
 	// If we get here then all groups have been collected
-	// OPT(dh): reuse slice
-	p.mappedGroups = nil
+	returnGroups(p.mappedGroups...)
+	clear(p.mappedGroups)
+	p.mappedGroups = p.mappedGroups[:0]
+	p.results = out[:0]
 	return out
 }
