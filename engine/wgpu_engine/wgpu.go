@@ -23,7 +23,6 @@ type Engine struct {
 	Device              *wgpu.Device
 	shaders             []shader
 	pool                resourcePool
-	bindMap             bindMap
 	downloads           map[renderer.ResourceID]*wgpu.Buffer
 	shadersToInitialize []uninitializedShader
 	UseCPU              bool
@@ -89,9 +88,9 @@ type bindMapImage struct {
 }
 
 type bindMap struct {
-	bufMap        map[renderer.ResourceID]*bindMapBuffer
-	imageMap      map[renderer.ResourceID]*bindMapImage
-	pendingClears map[renderer.ResourceID]struct{}
+	bufMap        mem.BinaryTreeMap[renderer.ResourceID, *bindMapBuffer]
+	imageMap      mem.BinaryTreeMap[renderer.ResourceID, *bindMapImage]
+	pendingClears mem.BinaryTreeMap[renderer.ResourceID, struct{}]
 }
 
 type bufferProperties struct {
@@ -127,10 +126,6 @@ func New(dev *wgpu.Device, options *RendererOptions) *Engine {
 		pool: resourcePool{
 			bufs: make(map[bufferProperties][]*wgpu.Buffer),
 		},
-		bindMap: bindMap{
-			bufMap:        make(map[renderer.ResourceID]*bindMapBuffer),
-			imageMap:      make(map[renderer.ResourceID]*bindMapImage),
-			pendingClears: make(map[renderer.ResourceID]struct{})},
 		downloads: make(map[renderer.ResourceID]*wgpu.Buffer),
 		UseCPU:    options.UseCPU,
 
@@ -279,6 +274,13 @@ func (eng *Engine) RunRecording(
 
 	var freeBufs, freeImages mem.BinaryTreeMap[renderer.ResourceID, struct{}]
 	transientMap := newTransientBindMap(arena, externalResources)
+	// Note that Vello reuses a single bind map for all frames, with the premise
+	// that some buffers will be reused across frames. Right now, however, no
+	// buffers seem to be reused. Once we do reuse buffers, we'll want to use a
+	// persistent bind map, too. But because most buffers aren't reused, it'll
+	// be cheaper to first track buffers locally, then remember only those
+	// buffers that weren't freed by the end of the frame.
+	bindMap := bindMap{}
 
 	// XXX why do we have a persistent bind map if we clear it at the end of the
 	// frame, anyway? Vello made that change in
@@ -296,7 +298,7 @@ func (eng *Engine) RunRecording(
 			usage := wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst | wgpu.BufferUsageStorage
 			buf := eng.pool.getBuf(bufProxy.Size, bufProxy.Name, usage, eng.Device)
 			queue.WriteBuffer(buf, 0, bytes)
-			eng.bindMap.insertBuf(bufProxy, buf)
+			bindMap.insertBuf(arena, bufProxy, buf)
 
 		case *renderer.UploadUniform:
 			bufProxy := cmd.Buffer
@@ -306,7 +308,7 @@ func (eng *Engine) RunRecording(
 			// XXXXXX "config" buffer is created here
 			buf := eng.pool.getBuf(bufProxy.Size, bufProxy.Name, usage, eng.Device)
 			queue.WriteBuffer(buf, 0, bytes)
-			eng.bindMap.insertBuf(bufProxy, buf)
+			bindMap.insertBuf(arena, bufProxy, buf)
 
 		case *renderer.UploadImage:
 			imageProxy := cmd.Image
@@ -356,7 +358,7 @@ func (eng *Engine) RunRecording(
 					DepthOrArrayLayers: 1,
 				}),
 			)
-			eng.bindMap.insertImage(imageProxy.ID, texture, textureView)
+			bindMap.insertImage(arena, imageProxy.ID, texture, textureView)
 
 		case *renderer.WriteImage:
 			proxy := cmd.Image
@@ -365,7 +367,7 @@ func (eng *Engine) RunRecording(
 			width := cmd.Coords[2]
 			height := cmd.Coords[3]
 			data := cmd.Data
-			texture, _ := eng.bindMap.getOrCreateImage(proxy, eng.Device)
+			texture, _ := bindMap.getOrCreateImage(arena, proxy, eng.Device)
 			format := imageFormatToWGPU(proxy.Format)
 			blockSize, ok := format.BlockCopySize(wgpu.TextureAspectAll)
 			if !ok {
@@ -402,7 +404,7 @@ func (eng *Engine) RunRecording(
 			case *wgpuShader:
 				bindGroup := transientMap.createBindGroup(
 					arena,
-					&eng.bindMap,
+					&bindMap,
 					&eng.pool,
 					eng.Device,
 					queue,
@@ -438,7 +440,7 @@ func (eng *Engine) RunRecording(
 			case *wgpuShader:
 				bindGroup := transientMap.createBindGroup(
 					arena,
-					&eng.bindMap,
+					&bindMap,
 					&eng.pool,
 					eng.Device,
 					queue,
@@ -448,7 +450,7 @@ func (eng *Engine) RunRecording(
 				)
 
 				transientMap.materializeGPUBufForIndirect(
-					&eng.bindMap,
+					&bindMap,
 					&eng.pool,
 					eng.Device,
 					queue,
@@ -462,7 +464,7 @@ func (eng *Engine) RunRecording(
 
 				cpass.SetPipeline(s.pipeline)
 				cpass.SetBindGroup(0, bindGroup, nil)
-				buf, ok := eng.bindMap.getGPUBuf(proxy.ID)
+				buf, ok := bindMap.getGPUBuf(proxy.ID)
 				if !ok {
 					panic("tried using unavailable buffer for indirect dispatch")
 				}
@@ -476,7 +478,7 @@ func (eng *Engine) RunRecording(
 
 		case *renderer.Download:
 			proxy := cmd.Buffer
-			srcBuf, ok := eng.bindMap.getGPUBuf(proxy.ID)
+			srcBuf, ok := bindMap.getGPUBuf(proxy.ID)
 			if !ok {
 				panic("tried using unavailable buffer for download")
 			}
@@ -489,7 +491,7 @@ func (eng *Engine) RunRecording(
 			proxy := cmd.Buffer
 			offset := cmd.Offset
 			size := cmd.Size
-			if buf, ok := eng.bindMap.getBuf(proxy); ok {
+			if buf, ok := bindMap.getBuf(proxy); ok {
 				switch b := buf.Buffer.(type) {
 				case *wgpu.Buffer:
 					encoder.ClearBuffer(b, offset, uint64(size))
@@ -503,7 +505,7 @@ func (eng *Engine) RunRecording(
 					panic(fmt.Sprintf("unhandled type %T", b))
 				}
 			} else {
-				eng.bindMap.pendingClears[proxy.ID] = struct{}{}
+				bindMap.pendingClears.Insert(arena, proxy.ID, struct{}{})
 			}
 
 		case *renderer.FreeBuffer:
@@ -523,9 +525,9 @@ func (eng *Engine) RunRecording(
 	cmd.Release()
 
 	for id := range freeBufs.Keys() {
-		buf, ok := eng.bindMap.bufMap[id]
+		buf, ok := bindMap.bufMap.Get(id)
 		if ok {
-			delete(eng.bindMap.bufMap, id)
+			bindMap.bufMap.Delete(id)
 			if gpuBuf, ok := buf.Buffer.(*wgpu.Buffer); ok {
 				props := bufferProperties{
 					size:   gpuBuf.Size(),
@@ -537,9 +539,9 @@ func (eng *Engine) RunRecording(
 		}
 	}
 	for id := range freeImages.Keys() {
-		tex, ok := eng.bindMap.imageMap[id]
+		tex, ok := bindMap.imageMap.Get(id)
 		if ok {
-			delete(eng.bindMap.imageMap, id)
+			bindMap.imageMap.Delete(id)
 			// TODO: have a pool to avoid needless re-allocation
 			tex.texture.Release()
 			tex.view.Release()
@@ -590,15 +592,15 @@ func (eng *Engine) createComputePipeline(
 	}
 }
 
-func (m *bindMap) insertBuf(proxy renderer.BufferProxy, buffer *wgpu.Buffer) {
-	m.bufMap[proxy.ID] = &bindMapBuffer{
+func (m *bindMap) insertBuf(arena *mem.Arena, proxy renderer.BufferProxy, buffer *wgpu.Buffer) {
+	m.bufMap.Insert(arena, proxy.ID, &bindMapBuffer{
 		Buffer: buffer,
 		Label:  proxy.Name,
-	}
+	})
 }
 
 func (m *bindMap) getGPUBuf(id renderer.ResourceID) (*wgpu.Buffer, bool) {
-	mbuf, ok := m.bufMap[id]
+	mbuf, ok := m.bufMap.Get(id)
 	if !ok {
 		return nil, false
 	}
@@ -607,37 +609,39 @@ func (m *bindMap) getGPUBuf(id renderer.ResourceID) (*wgpu.Buffer, bool) {
 }
 
 func (m *bindMap) getCPUBuf(id renderer.ResourceID) cpuBinding {
-	buf, ok := m.bufMap[id].Buffer.([]byte)
+	b, ok := m.bufMap.Get(id)
+	buf, ok := b.Buffer.([]byte)
 	if !ok {
 		panic("getting CPU buffer, but it's on GPU")
 	}
 	return cpuBufferRW(buf)
 }
 
-func (m *bindMap) materializeCPUBuf(proxy renderer.BufferProxy) {
-	if _, ok := m.bufMap[proxy.ID]; !ok {
+func (m *bindMap) materializeCPUBuf(arena *mem.Arena, proxy renderer.BufferProxy) {
+	if _, ok := m.bufMap.Get(proxy.ID); !ok {
 		buffer := make([]byte, proxy.Size)
-		m.bufMap[proxy.ID] = &bindMapBuffer{
+		m.bufMap.Insert(arena, proxy.ID, &bindMapBuffer{
 			Buffer: buffer,
 			Label:  proxy.Name,
-		}
+		})
 	}
 }
 
-func (m *bindMap) insertImage(id renderer.ResourceID, image *wgpu.Texture, imageView *wgpu.TextureView) {
-	m.imageMap[id] = &bindMapImage{image, imageView}
+func (m *bindMap) insertImage(arena *mem.Arena, id renderer.ResourceID, image *wgpu.Texture, imageView *wgpu.TextureView) {
+	m.imageMap.Insert(arena, id, &bindMapImage{image, imageView})
 }
 
 func (m *bindMap) getBuf(proxy renderer.BufferProxy) (*bindMapBuffer, bool) {
-	b, ok := m.bufMap[proxy.ID]
+	b, ok := m.bufMap.Get(proxy.ID)
 	return b, ok
 }
 
 func (m *bindMap) getOrCreateImage(
+	arena *mem.Arena,
 	proxy renderer.ImageProxy,
 	dev *wgpu.Device,
 ) (*wgpu.Texture, *wgpu.TextureView) {
-	if entry, ok := m.imageMap[proxy.ID]; ok {
+	if entry, ok := m.imageMap.Get(proxy.ID); ok {
 		return entry.texture, entry.view
 	}
 
@@ -663,9 +667,9 @@ func (m *bindMap) getOrCreateImage(
 		ArrayLayerCount: ^uint32(0),
 		Format:          imageFormatToWGPU(proxy.Format),
 	})
-	m.imageMap[proxy.ID] = &bindMapImage{
+	m.imageMap.Insert(arena, proxy.ID, &bindMapImage{
 		texture, textureView,
-	}
+	})
 
 	return texture, textureView
 }
@@ -754,7 +758,7 @@ func (m *transientBindMap) materializeGPUBufForIndirect(
 	if _, ok := m.bufs.Get(buf.ID); ok {
 		return
 	}
-	if b, ok := bindMap.bufMap[buf.ID]; ok {
+	if b, ok := bindMap.bufMap.Get(buf.ID); ok {
 		b.uploadIfNeeded(buf, dev, queue, pool)
 	}
 }
@@ -775,7 +779,7 @@ func (m *transientBindMap) createBindGroup(
 			if _, ok := m.bufs.Get(proxy.BufferProxy.ID); ok {
 				continue
 			}
-			if o, ok := bindMap.bufMap[proxy.BufferProxy.ID]; ok {
+			if o, ok := bindMap.bufMap.Get(proxy.BufferProxy.ID); ok {
 				o.uploadIfNeeded(proxy.BufferProxy, dev, queue, pool)
 			} else {
 				// TODO: only some buffers will need indirect, but does it hurt?
@@ -784,20 +788,20 @@ func (m *transientBindMap) createBindGroup(
 					wgpu.BufferUsageStorage |
 					wgpu.BufferUsageIndirect
 				buf := pool.getBuf(proxy.Size, proxy.Name, usage, dev)
-				if _, ok := bindMap.pendingClears[proxy.BufferProxy.ID]; ok {
-					delete(bindMap.pendingClears, proxy.BufferProxy.ID)
+				if _, ok := bindMap.pendingClears.Get(proxy.BufferProxy.ID); ok {
+					bindMap.pendingClears.Delete(proxy.BufferProxy.ID)
 					encoder.ClearBuffer(buf, 0, buf.Size())
 				}
-				bindMap.bufMap[proxy.BufferProxy.ID] = &bindMapBuffer{
+				bindMap.bufMap.Insert(arena, proxy.BufferProxy.ID, &bindMapBuffer{
 					Buffer: buf,
 					Label:  proxy.Name,
-				}
+				})
 			}
 		case renderer.ResourceProxyKindImage:
 			if _, ok := m.images.Get(proxy.ImageProxy.ID); ok {
 				continue
 			}
-			if _, ok := bindMap.imageMap[proxy.ImageProxy.ID]; ok {
+			if _, ok := bindMap.imageMap.Get(proxy.ImageProxy.ID); ok {
 				continue
 			}
 			format := imageFormatToWGPU(proxy.Format)
@@ -823,9 +827,9 @@ func (m *transientBindMap) createBindGroup(
 				ArrayLayerCount: ^uint32(0),
 				Format:          imageFormatToWGPU(proxy.Format),
 			})
-			bindMap.imageMap[proxy.ImageProxy.ID] = &bindMapImage{
+			bindMap.imageMap.Insert(arena, proxy.ImageProxy.ID, &bindMapImage{
 				texture, textureView,
-			}
+			})
 		default:
 			panic(fmt.Sprintf("unhandled type %d", proxy.Kind))
 		}
@@ -855,7 +859,7 @@ func (m *transientBindMap) createBindGroup(
 		case renderer.ResourceProxyKindImage:
 			view, ok := m.images.Get(proxy.ImageProxy.ID)
 			if !ok {
-				img, ok := bindMap.imageMap[proxy.ImageProxy.ID]
+				img, ok := bindMap.imageMap.Get(proxy.ImageProxy.ID)
 				if !ok {
 					panic("unexpected ok == false")
 				}
@@ -878,6 +882,7 @@ func (m *transientBindMap) createBindGroup(
 }
 
 func (m *transientBindMap) createCPUResources(
+	arena *mem.Arena,
 	bindMap *bindMap,
 	bindings []renderer.ResourceProxy,
 ) []cpuBinding {
@@ -890,7 +895,7 @@ func (m *transientBindMap) createCPUResources(
 			case transientBufKindBuffer:
 				panic("buffer was already materialized on GPU")
 			case 0:
-				bindMap.materializeCPUBuf(resource.BufferProxy)
+				bindMap.materializeCPUBuf(arena, resource.BufferProxy)
 			default:
 				panic(fmt.Sprintf("unhandled type %T", tbuf))
 			}
