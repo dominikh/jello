@@ -6,6 +6,7 @@ import (
 
 	"honnef.co/go/jello/encoding"
 	"honnef.co/go/jello/engine/wgpu_engine/shaders"
+	"honnef.co/go/jello/mem"
 	"honnef.co/go/jello/renderer"
 	"honnef.co/go/wgpu"
 )
@@ -189,6 +190,7 @@ func imageFormatToWGPU(f renderer.ImageFormat) wgpu.TextureFormat {
 }
 
 func (eng *Engine) RenderToTexture(
+	arena *mem.Arena,
 	queue *wgpu.Queue,
 	enc *encoding.Encoding,
 	texture *wgpu.TextureView,
@@ -198,7 +200,7 @@ func (eng *Engine) RenderToTexture(
 	pgroup = pgroup.Nest("RenderToTexture")
 	defer pgroup.End()
 
-	recording, target := renderer.RenderFull(enc, eng.resolver, eng.fullShaders, params, pgroup)
+	recording, target := renderer.RenderFull(arena, enc, eng.resolver, eng.fullShaders, params, pgroup)
 
 	externalResources := []ExternalResource{
 		ExternalImage{
@@ -206,10 +208,11 @@ func (eng *Engine) RenderToTexture(
 			View:  texture,
 		},
 	}
-	eng.RunRecording(queue, recording, externalResources, "render_to_texture", pgroup)
+	eng.RunRecording(arena, queue, recording, externalResources, "render_to_texture", pgroup)
 }
 
 func (eng *Engine) RenderToSurface(
+	arena *mem.Arena,
 	queue *wgpu.Queue,
 	enc *encoding.Encoding,
 	surface *wgpu.SurfaceTexture,
@@ -234,7 +237,7 @@ func (eng *Engine) RenderToSurface(
 	defer cmdy.Release()
 	queue.Submit(cmdy)
 
-	eng.RenderToTexture(queue, enc, eng.target.View, params, pgroup)
+	eng.RenderToTexture(arena, queue, enc, eng.target.View, params, pgroup)
 
 	surfaceView := surface.Texture.CreateView(nil)
 	defer surfaceView.Release()

@@ -3,6 +3,8 @@ package renderer
 import (
 	"fmt"
 	"sync/atomic"
+
+	"honnef.co/go/jello/mem"
 )
 
 var resourceID atomic.Uint64
@@ -30,63 +32,64 @@ type Recording struct {
 	Commands []Command
 }
 
-func (rec *Recording) push(cmd Command) {
-	rec.Commands = append(rec.Commands, cmd)
+func (rec *Recording) push(arena *mem.Arena, cmd Command) {
+	rec.Commands = mem.Append(arena, rec.Commands, cmd)
 }
 
-func (rec *Recording) Upload(name string, data []byte) BufferProxy {
+func (rec *Recording) Upload(arena *mem.Arena, name string, data []byte) BufferProxy {
 	buf := NewBufferProxy(uint64(len(data)), name)
-	rec.push(Upload{buf, data})
+	rec.push(arena, mem.Make(arena, Upload{buf, data}))
 	return buf
 }
 
-func (rec *Recording) UploadUniform(name string, data []byte) BufferProxy {
+func (rec *Recording) UploadUniform(arena *mem.Arena, name string, data []byte) BufferProxy {
 	buf := NewBufferProxy(uint64(len(data)), name)
-	rec.push(UploadUniform{buf, data})
+	rec.push(arena, mem.Make(arena, UploadUniform{buf, data}))
 	return buf
 }
 
-func (rec *Recording) UploadImage(width, height uint32, format ImageFormat, data []byte) ImageProxy {
+func (rec *Recording) UploadImage(arena *mem.Arena, width, height uint32, format ImageFormat, data []byte) ImageProxy {
 	imageProxy := NewImageProxy(width, height, format)
-	rec.Commands = append(rec.Commands, UploadImage{imageProxy, data})
+	rec.push(arena, mem.Make(arena, UploadImage{imageProxy, data}))
 	return imageProxy
 }
 
-func (rec *Recording) Dispatch(shader ShaderID, wgSize [3]uint32, resources []ResourceProxy) {
-	rec.push(Dispatch{shader, wgSize, resources})
+func (rec *Recording) Dispatch(arena *mem.Arena, shader ShaderID, wgSize [3]uint32, resources []ResourceProxy) {
+	rec.push(arena, mem.Make(arena, Dispatch{shader, wgSize, resources}))
 }
 
 func (rec *Recording) DispatchIndirect(
+	arena *mem.Arena,
 	shader ShaderID,
 	buf BufferProxy,
 	offset uint64,
 	resources []ResourceProxy,
 ) {
-	rec.push(DispatchIndirect{shader, buf, offset, resources})
+	rec.push(arena, mem.Make(arena, DispatchIndirect{shader, buf, offset, resources}))
 }
 
-func (rec *Recording) Download(buf BufferProxy) {
-	rec.push(Download{buf})
+func (rec *Recording) Download(arena *mem.Arena, buf BufferProxy) {
+	rec.push(arena, mem.Make(arena, Download{buf}))
 }
 
-func (rec *Recording) ClearAll(buf BufferProxy) {
-	rec.push(Clear{buf, 0, -1})
+func (rec *Recording) ClearAll(arena *mem.Arena, buf BufferProxy) {
+	rec.push(arena, mem.Make(arena, Clear{buf, 0, -1}))
 }
 
-func (rec *Recording) FreeBuffer(buf BufferProxy) {
-	rec.push(FreeBuffer{buf})
+func (rec *Recording) FreeBuffer(arena *mem.Arena, buf BufferProxy) {
+	rec.push(arena, mem.Make(arena, FreeBuffer{buf}))
 }
 
-func (rec *Recording) FreeImage(image ImageProxy) {
-	rec.push(FreeImage{image})
+func (rec *Recording) FreeImage(arena *mem.Arena, image ImageProxy) {
+	rec.push(arena, mem.Make(arena, FreeImage{image}))
 }
 
-func (rec *Recording) FreeResource(resource ResourceProxy) {
+func (rec *Recording) FreeResource(arena *mem.Arena, resource ResourceProxy) {
 	switch resource.Kind {
 	case ResourceProxyKindBuffer:
-		rec.FreeBuffer(resource.BufferProxy)
+		rec.FreeBuffer(arena, resource.BufferProxy)
 	case ResourceProxyKindImage:
-		rec.FreeImage(resource.ImageProxy)
+		rec.FreeImage(arena, resource.ImageProxy)
 	default:
 		panic(fmt.Sprintf("unhandled type %T", resource))
 	}
@@ -147,16 +150,16 @@ type Command interface {
 	isCommand()
 }
 
-func (Upload) isCommand()           {}
-func (UploadUniform) isCommand()    {}
-func (UploadImage) isCommand()      {}
-func (WriteImage) isCommand()       {}
-func (Dispatch) isCommand()         {}
-func (DispatchIndirect) isCommand() {}
-func (Download) isCommand()         {}
-func (Clear) isCommand()            {}
-func (FreeBuffer) isCommand()       {}
-func (FreeImage) isCommand()        {}
+func (*Upload) isCommand()           {}
+func (*UploadUniform) isCommand()    {}
+func (*UploadImage) isCommand()      {}
+func (*WriteImage) isCommand()       {}
+func (*Dispatch) isCommand()         {}
+func (*DispatchIndirect) isCommand() {}
+func (*Download) isCommand()         {}
+func (*Clear) isCommand()            {}
+func (*FreeBuffer) isCommand()       {}
+func (*FreeImage) isCommand()        {}
 
 type BindTypeType int
 

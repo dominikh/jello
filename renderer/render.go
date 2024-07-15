@@ -3,6 +3,7 @@ package renderer
 import (
 	"honnef.co/go/jello/encoding"
 	"honnef.co/go/jello/gfx"
+	"honnef.co/go/jello/mem"
 	"honnef.co/go/jello/profiler"
 	"honnef.co/go/safeish"
 )
@@ -72,6 +73,7 @@ type fineResources struct {
 }
 
 func (r *Render) RenderEncodingCoarse(
+	arena *mem.Arena,
 	encoding *encoding.Encoding,
 	resolver *Resolver,
 	shaders *FullShaders,
@@ -90,6 +92,7 @@ func (r *Render) RenderEncodingCoarse(
 	} else {
 		data := safeish.SliceCast[[]byte](ramps.Data)
 		gradientImage = recording.UploadImage(
+			arena,
 			ramps.Width,
 			ramps.Height,
 			Rgba8,
@@ -108,8 +111,8 @@ func (r *Render) RenderEncodingCoarse(
 	bufferSizes := &cpuConfig.bufferSizes
 	wgCounts := &cpuConfig.workgroupCounts
 
-	sceneBuf := recording.Upload("scene", packed)
-	configBuf := recording.UploadUniform("config", safeish.AsBytes(&cpuConfig.gpu))
+	sceneBuf := recording.Upload(arena, "scene", packed)
+	configBuf := recording.UploadUniform(arena, "config", safeish.AsBytes(&cpuConfig.gpu))
 	infoBinDataBuf := NewBufferProxy(
 		uint64(bufferSizes.BinData.sizeInBytes()),
 		"infoBinDataBuf",
@@ -123,9 +126,10 @@ func (r *Render) RenderEncodingCoarse(
 	)
 	// TODO: really only need pathtagWgs - 1
 	recording.Dispatch(
+		arena,
 		shaders.PathtagReduce,
 		wgCounts.PathReduce,
-		[]ResourceProxy{configBuf.Resource(), sceneBuf.Resource(), reducedBuf.Resource()},
+		mem.MakeSlice(arena, []ResourceProxy{configBuf.Resource(), sceneBuf.Resource(), reducedBuf.Resource()}),
 	)
 	pathtagParent := reducedBuf
 	var largePathtagBufs *[2]ResourceProxy
@@ -136,18 +140,20 @@ func (r *Render) RenderEncodingCoarse(
 			"reduced2Buf",
 		)
 		recording.Dispatch(
+			arena,
 			shaders.PathtagReduce2,
 			wgCounts.PathReduce2,
-			[]ResourceProxy{reducedBuf.Resource(), reduced2Buf.Resource()},
+			mem.MakeSlice(arena, []ResourceProxy{reducedBuf.Resource(), reduced2Buf.Resource()}),
 		)
 		reducedScanBuf := NewBufferProxy(
 			uint64(bufferSizes.PathReducedScan.sizeInBytes()),
 			"reducedScanBuf",
 		)
 		recording.Dispatch(
+			arena,
 			shaders.PathtagScan1,
 			wgCounts.PathScan1,
-			[]ResourceProxy{reducedBuf.Resource(), reduced2Buf.Resource(), reducedScanBuf.Resource()},
+			mem.MakeSlice(arena, []ResourceProxy{reducedBuf.Resource(), reduced2Buf.Resource(), reducedScanBuf.Resource()}),
 		)
 		pathtagParent = reducedScanBuf
 		largePathtagBufs = &[2]ResourceProxy{reduced2Buf.Resource(), reducedScanBuf.Resource()}
@@ -164,47 +170,51 @@ func (r *Render) RenderEncodingCoarse(
 		pathtagScan = shaders.PathtagScanSmall
 	}
 	recording.Dispatch(
+		arena,
 		pathtagScan,
 		wgCounts.PathScan,
-		[]ResourceProxy{configBuf.Resource(), sceneBuf.Resource(), pathtagParent.Resource(), tagmonoidBuf.Resource()},
+		mem.MakeSlice(arena, []ResourceProxy{configBuf.Resource(), sceneBuf.Resource(), pathtagParent.Resource(), tagmonoidBuf.Resource()}),
 	)
-	recording.FreeResource(reducedBuf.Resource())
+	recording.FreeResource(arena, reducedBuf.Resource())
 	if largePathtagBufs != nil {
-		recording.FreeResource(largePathtagBufs[0])
-		recording.FreeResource(largePathtagBufs[1])
+		recording.FreeResource(arena, largePathtagBufs[0])
+		recording.FreeResource(arena, largePathtagBufs[1])
 	}
 	pathBboxBuf := NewBufferProxy(
 		uint64(bufferSizes.PathBboxes.sizeInBytes()),
 		"pathBboxBuf",
 	)
 	recording.Dispatch(
+		arena,
 		shaders.BboxClear,
 		wgCounts.BboxClear,
-		[]ResourceProxy{configBuf.Resource(), pathBboxBuf.Resource()},
+		mem.MakeSlice(arena, []ResourceProxy{configBuf.Resource(), pathBboxBuf.Resource()}),
 	)
 	bumpBuf := NewBufferProxy(uint64(bufferSizes.BumpAlloc.sizeInBytes()), "bumpBuf")
-	recording.ClearAll(bumpBuf)
+	recording.ClearAll(arena, bumpBuf)
 	linesBuf := NewBufferProxy(uint64(bufferSizes.Lines.sizeInBytes()), "linesBuf")
 	recording.Dispatch(
+		arena,
 		shaders.Flatten,
 		wgCounts.Flatten,
-		[]ResourceProxy{
+		mem.MakeSlice(arena, []ResourceProxy{
 			configBuf.Resource(),
 			sceneBuf.Resource(),
 			tagmonoidBuf.Resource(),
 			pathBboxBuf.Resource(),
 			bumpBuf.Resource(),
 			linesBuf.Resource(),
-		},
+		}),
 	)
 	drawReducedBuf := NewBufferProxy(
 		uint64(bufferSizes.DrawReduced.sizeInBytes()),
 		"drawReducedBuf",
 	)
 	recording.Dispatch(
+		arena,
 		shaders.DrawReduce,
 		wgCounts.DrawReduce,
-		[]ResourceProxy{configBuf.Resource(), sceneBuf.Resource(), drawReducedBuf.Resource()},
+		mem.MakeSlice(arena, []ResourceProxy{configBuf.Resource(), sceneBuf.Resource(), drawReducedBuf.Resource()}),
 	)
 	drawMonoidBuf := NewBufferProxy(
 		uint64(bufferSizes.DrawMonoids.sizeInBytes()),
@@ -215,9 +225,10 @@ func (r *Render) RenderEncodingCoarse(
 		"clipInpBuf",
 	)
 	recording.Dispatch(
+		arena,
 		shaders.DrawLeaf,
 		wgCounts.DrawLeaf,
-		[]ResourceProxy{
+		mem.MakeSlice(arena, []ResourceProxy{
 			configBuf.Resource(),
 			sceneBuf.Resource(),
 			drawReducedBuf.Resource(),
@@ -225,9 +236,9 @@ func (r *Render) RenderEncodingCoarse(
 			drawMonoidBuf.Resource(),
 			infoBinDataBuf.Resource(),
 			clipInpBuf.Resource(),
-		},
+		}),
 	)
-	recording.FreeResource(drawReducedBuf.Resource())
+	recording.FreeResource(arena, drawReducedBuf.Resource())
 	clipElBuf := NewBufferProxy(uint64(bufferSizes.ClipEls.sizeInBytes()), "clipElBuf")
 	clipBicBuf := NewBufferProxy(
 		uint64(bufferSizes.ClipBics.sizeInBytes()),
@@ -235,9 +246,10 @@ func (r *Render) RenderEncodingCoarse(
 	)
 	if wgCounts.ClipReduce[0] > 0 {
 		recording.Dispatch(
+			arena,
 			shaders.ClipReduce,
 			wgCounts.ClipReduce,
-			[]ResourceProxy{clipInpBuf.Resource(), pathBboxBuf.Resource(), clipBicBuf.Resource(), clipElBuf.Resource()},
+			mem.MakeSlice(arena, []ResourceProxy{clipInpBuf.Resource(), pathBboxBuf.Resource(), clipBicBuf.Resource(), clipElBuf.Resource()}),
 		)
 	}
 	clipBboxBuf := NewBufferProxy(
@@ -246,9 +258,10 @@ func (r *Render) RenderEncodingCoarse(
 	)
 	if wgCounts.ClipLeaf[0] > 0 {
 		recording.Dispatch(
+			arena,
 			shaders.ClipLeaf,
 			wgCounts.ClipLeaf,
-			[]ResourceProxy{
+			mem.MakeSlice(arena, []ResourceProxy{
 				configBuf.Resource(),
 				clipInpBuf.Resource(),
 				pathBboxBuf.Resource(),
@@ -256,12 +269,12 @@ func (r *Render) RenderEncodingCoarse(
 				clipElBuf.Resource(),
 				drawMonoidBuf.Resource(),
 				clipBboxBuf.Resource(),
-			},
+			}),
 		)
 	}
-	recording.FreeResource(clipInpBuf.Resource())
-	recording.FreeResource(clipBicBuf.Resource())
-	recording.FreeResource(clipElBuf.Resource())
+	recording.FreeResource(arena, clipInpBuf.Resource())
+	recording.FreeResource(arena, clipBicBuf.Resource())
+	recording.FreeResource(arena, clipElBuf.Resource())
 	drawBboxBuf := NewBufferProxy(
 		uint64(bufferSizes.DrawBboxes.sizeInBytes()),
 		"drawBboxBuf",
@@ -271,9 +284,10 @@ func (r *Render) RenderEncodingCoarse(
 		"binHeaderBuf",
 	)
 	recording.Dispatch(
+		arena,
 		shaders.Binning,
 		wgCounts.Binning,
-		[]ResourceProxy{
+		mem.MakeSlice(arena, []ResourceProxy{
 			configBuf.Resource(),
 			drawMonoidBuf.Resource(),
 			pathBboxBuf.Resource(),
@@ -282,63 +296,68 @@ func (r *Render) RenderEncodingCoarse(
 			bumpBuf.Resource(),
 			infoBinDataBuf.Resource(),
 			binHeaderBuf.Resource(),
-		},
+		}),
 	)
-	recording.FreeResource(drawMonoidBuf.Resource())
-	recording.FreeResource(pathBboxBuf.Resource())
-	recording.FreeResource(clipBboxBuf.Resource())
+	recording.FreeResource(arena, drawMonoidBuf.Resource())
+	recording.FreeResource(arena, pathBboxBuf.Resource())
+	recording.FreeResource(arena, clipBboxBuf.Resource())
 	// Note: this only needs to be rounded up because of the workaround to store the tileOffset
 	// in storage rather than workgroup memory.
 	pathBuf := NewBufferProxy(uint64(bufferSizes.Paths.sizeInBytes()), "pathBuf")
 	recording.Dispatch(
+		arena,
 		shaders.TileAlloc,
 		wgCounts.TileAlloc,
-		[]ResourceProxy{
+		mem.MakeSlice(arena, []ResourceProxy{
 			configBuf.Resource(),
 			sceneBuf.Resource(),
 			drawBboxBuf.Resource(),
 			bumpBuf.Resource(),
 			pathBuf.Resource(),
 			tileBuf.Resource(),
-		},
+		}),
 	)
-	recording.FreeResource(drawBboxBuf.Resource())
-	recording.FreeResource(tagmonoidBuf.Resource())
+	recording.FreeResource(arena, drawBboxBuf.Resource())
+	recording.FreeResource(arena, tagmonoidBuf.Resource())
 	indirectCountBuf := NewBufferProxy(
 		uint64(bufferSizes.IndirectCount.sizeInBytes()),
 		"indirectCount",
 	)
 	recording.Dispatch(
+		arena,
 		shaders.PathCountSetup,
 		wgCounts.PathCountSetup,
-		[]ResourceProxy{bumpBuf.Resource(), indirectCountBuf.Resource()},
+		mem.MakeSlice(arena, []ResourceProxy{bumpBuf.Resource(), indirectCountBuf.Resource()}),
 	)
 	segCountsBuf := NewBufferProxy(
 		uint64(bufferSizes.SegCounts.sizeInBytes()),
 		"segCountsBuf",
 	)
 	recording.DispatchIndirect(
+		arena,
 		shaders.PathCount,
 		indirectCountBuf,
 		0,
-		[]ResourceProxy{
+		mem.MakeSlice(arena, []ResourceProxy{
 			configBuf.Resource(),
 			bumpBuf.Resource(),
 			linesBuf.Resource(),
 			pathBuf.Resource(),
 			tileBuf.Resource(),
 			segCountsBuf.Resource(),
-		},
+		}),
 	)
 	recording.Dispatch(
+		arena,
 		shaders.BackdropDyn,
 		wgCounts.Backdrop,
-		[]ResourceProxy{configBuf.Resource(), bumpBuf.Resource(), pathBuf.Resource(), tileBuf.Resource()},
+		mem.MakeSlice(arena, []ResourceProxy{configBuf.Resource(), bumpBuf.Resource(), pathBuf.Resource(), tileBuf.Resource()}),
 	)
 	recording.Dispatch(
+		arena,
 		shaders.Coarse,
 		wgCounts.Coarse,
-		[]ResourceProxy{
+		mem.MakeSlice(arena, []ResourceProxy{
 			configBuf.Resource(),
 			sceneBuf.Resource(),
 			drawMonoidBuf.Resource(),
@@ -348,33 +367,35 @@ func (r *Render) RenderEncodingCoarse(
 			tileBuf.Resource(),
 			bumpBuf.Resource(),
 			ptclBuf.Resource(),
-		},
+		}),
 	)
 	recording.Dispatch(
+		arena,
 		shaders.PathTilingSetup,
 		wgCounts.PathTilingSetup,
-		[]ResourceProxy{bumpBuf.Resource(), indirectCountBuf.Resource(), ptclBuf.Resource()},
+		mem.MakeSlice(arena, []ResourceProxy{bumpBuf.Resource(), indirectCountBuf.Resource(), ptclBuf.Resource()}),
 	)
 	recording.DispatchIndirect(
+		arena,
 		shaders.PathTiling,
 		indirectCountBuf,
 		0,
-		[]ResourceProxy{
+		mem.MakeSlice(arena, []ResourceProxy{
 			bumpBuf.Resource(),
 			segCountsBuf.Resource(),
 			linesBuf.Resource(),
 			pathBuf.Resource(),
 			tileBuf.Resource(),
 			segmentsBuf.Resource(),
-		},
+		}),
 	)
-	recording.FreeBuffer(indirectCountBuf)
-	recording.FreeResource(segCountsBuf.Resource())
-	recording.FreeResource(linesBuf.Resource())
-	recording.FreeResource(sceneBuf.Resource())
-	recording.FreeResource(drawMonoidBuf.Resource())
-	recording.FreeResource(binHeaderBuf.Resource())
-	recording.FreeResource(pathBuf.Resource())
+	recording.FreeBuffer(arena, indirectCountBuf)
+	recording.FreeResource(arena, segCountsBuf.Resource())
+	recording.FreeResource(arena, linesBuf.Resource())
+	recording.FreeResource(arena, sceneBuf.Resource())
+	recording.FreeResource(arena, drawMonoidBuf.Resource())
+	recording.FreeResource(arena, binHeaderBuf.Resource())
+	recording.FreeResource(arena, pathBuf.Resource())
 	outImage := NewImageProxy(params.Width, params.Height, Rgba8)
 	r.fineWgCount = wgCounts.Fine
 	r.fineResources = fineResources{
@@ -390,13 +411,13 @@ func (r *Render) RenderEncodingCoarse(
 		outImage:       outImage,
 	}
 	if robust {
-		recording.Download(bumpBuf)
+		recording.Download(arena, bumpBuf)
 	}
-	recording.FreeResource(bumpBuf.Resource())
+	recording.FreeResource(arena, bumpBuf.Resource())
 	return &recording
 }
 
-func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup profiler.ProfilerGroup) {
+func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording *Recording, pgroup profiler.ProfilerGroup) {
 	pgroup = pgroup.Start("RecordFine")
 	defer pgroup.End()
 
@@ -405,9 +426,10 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup p
 	switch fine.aaConfig {
 	case Area:
 		recording.Dispatch(
+			arena,
 			shaders.FineArea,
 			fineWgCount,
-			[]ResourceProxy{
+			mem.MakeSlice(arena, []ResourceProxy{
 				fine.configBuf,
 				fine.segmentsBuf,
 				fine.ptclBuf,
@@ -415,7 +437,7 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup p
 				fine.outImage.Resource(),
 				fine.gradientImage,
 				fine.imageAtlas,
-			},
+			}),
 		)
 	default:
 		if r.maskBuf.Kind == 0 {
@@ -428,7 +450,7 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup p
 			default:
 				panic("unreachable")
 			}
-			buf := recording.Upload("mask lut", maskLUT)
+			buf := recording.Upload(arena, "mask lut", maskLUT)
 			r.maskBuf = buf.Resource()
 		}
 		var fineShader ShaderID
@@ -442,9 +464,10 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup p
 		}
 
 		recording.Dispatch(
+			arena,
 			fineShader,
 			fineWgCount,
-			[]ResourceProxy{
+			mem.MakeSlice(arena, []ResourceProxy{
 				fine.configBuf,
 				fine.segmentsBuf,
 				fine.ptclBuf,
@@ -453,20 +476,20 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup p
 				fine.gradientImage,
 				fine.imageAtlas,
 				r.maskBuf,
-			},
+			}),
 		)
 	}
 
-	recording.FreeResource(fine.configBuf)
-	recording.FreeResource(fine.tileBuf)
-	recording.FreeResource(fine.segmentsBuf)
-	recording.FreeResource(fine.ptclBuf)
-	recording.FreeResource(fine.gradientImage)
-	recording.FreeResource(fine.imageAtlas)
-	recording.FreeResource(fine.infoBinDataBuf)
+	recording.FreeResource(arena, fine.configBuf)
+	recording.FreeResource(arena, fine.tileBuf)
+	recording.FreeResource(arena, fine.segmentsBuf)
+	recording.FreeResource(arena, fine.ptclBuf)
+	recording.FreeResource(arena, fine.gradientImage)
+	recording.FreeResource(arena, fine.imageAtlas)
+	recording.FreeResource(arena, fine.infoBinDataBuf)
 	// TODO: make mask buf persistent
 	if r.maskBuf.Kind != 0 {
-		recording.FreeResource(r.maskBuf)
+		recording.FreeResource(arena, r.maskBuf)
 		r.maskBuf = ResourceProxy{}
 	}
 }
@@ -476,6 +499,7 @@ func (r *Render) OutImage() ImageProxy {
 }
 
 func RenderFull(
+	arena *mem.Arena,
 	enc *encoding.Encoding,
 	resolver *Resolver,
 	shaders *FullShaders,
@@ -486,8 +510,8 @@ func RenderFull(
 	defer pgroup.End()
 
 	var render Render
-	recording := render.RenderEncodingCoarse(enc, resolver, shaders, params, false, pgroup)
+	recording := render.RenderEncodingCoarse(arena, enc, resolver, shaders, params, false, pgroup)
 	outImage := render.OutImage()
-	render.RecordFine(shaders, recording, pgroup)
+	render.RecordFine(arena, shaders, recording, pgroup)
 	return recording, outImage.Resource()
 }
