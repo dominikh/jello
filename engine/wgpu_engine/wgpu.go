@@ -751,13 +751,13 @@ func (m *transientBindMap) createBindGroup(
 	bindings []renderer.ResourceProxy,
 ) *wgpu.BindGroup {
 	for _, proxy := range bindings {
-		switch proxy := proxy.(type) {
-		case renderer.BufferProxy:
-			if _, ok := m.bufs[proxy.ID]; ok {
+		switch proxy.Kind {
+		case renderer.ResourceProxyKindBuffer:
+			if _, ok := m.bufs[proxy.BufferProxy.ID]; ok {
 				continue
 			}
-			if o, ok := bindMap.bufMap[proxy.ID]; ok {
-				o.uploadIfNeeded(proxy, dev, queue, pool)
+			if o, ok := bindMap.bufMap[proxy.BufferProxy.ID]; ok {
+				o.uploadIfNeeded(proxy.BufferProxy, dev, queue, pool)
 			} else {
 				// TODO: only some buffers will need indirect, but does it hurt?
 				usage := wgpu.BufferUsageCopySrc |
@@ -765,20 +765,20 @@ func (m *transientBindMap) createBindGroup(
 					wgpu.BufferUsageStorage |
 					wgpu.BufferUsageIndirect
 				buf := pool.getBuf(proxy.Size, proxy.Name, usage, dev)
-				if _, ok := bindMap.pendingClears[proxy.ID]; ok {
-					delete(bindMap.pendingClears, proxy.ID)
+				if _, ok := bindMap.pendingClears[proxy.BufferProxy.ID]; ok {
+					delete(bindMap.pendingClears, proxy.BufferProxy.ID)
 					encoder.ClearBuffer(buf, 0, buf.Size())
 				}
-				bindMap.bufMap[proxy.ID] = &bindMapBuffer{
+				bindMap.bufMap[proxy.BufferProxy.ID] = &bindMapBuffer{
 					Buffer: buf,
 					Label:  proxy.Name,
 				}
 			}
-		case renderer.ImageProxy:
-			if _, ok := m.images[proxy.ID]; ok {
+		case renderer.ResourceProxyKindImage:
+			if _, ok := m.images[proxy.ImageProxy.ID]; ok {
 				continue
 			}
-			if _, ok := bindMap.imageMap[proxy.ID]; ok {
+			if _, ok := bindMap.imageMap[proxy.ImageProxy.ID]; ok {
 				continue
 			}
 			format := imageFormatToWGPU(proxy.Format)
@@ -804,7 +804,7 @@ func (m *transientBindMap) createBindGroup(
 				ArrayLayerCount: ^uint32(0),
 				Format:          imageFormatToWGPU(proxy.Format),
 			})
-			bindMap.imageMap[proxy.ID] = &bindMapImage{
+			bindMap.imageMap[proxy.ImageProxy.ID] = &bindMapImage{
 				texture, textureView,
 			}
 		default:
@@ -812,17 +812,24 @@ func (m *transientBindMap) createBindGroup(
 		}
 	}
 
-	entries := make([]wgpu.BindGroupEntry, len(bindings))
+	entries := m.bindGroupEntries
+	if cap(entries) >= len(bindings) {
+		entries = entries[:len(bindings)]
+		clear(entries)
+	} else {
+		entries = make([]wgpu.BindGroupEntry, len(bindings))
+		m.bindGroupEntries = entries
+	}
 	for i, proxy := range bindings {
-		switch proxy := proxy.(type) {
-		case renderer.BufferProxy:
+		switch proxy.Kind {
+		case renderer.ResourceProxyKindBuffer:
 			var buf *wgpu.Buffer
-			switch b := m.bufs[proxy.ID].(type) {
+			switch b := m.bufs[proxy.BufferProxy.ID].(type) {
 			case *wgpu.Buffer:
 				buf = b
 			default:
 				var ok bool
-				buf, ok = bindMap.getGPUBuf(proxy.ID)
+				buf, ok = bindMap.getGPUBuf(proxy.BufferProxy.ID)
 				if !ok {
 					panic("unexpected ok == false")
 				}
@@ -832,10 +839,10 @@ func (m *transientBindMap) createBindGroup(
 				Buffer:  buf,
 				Size:    ^uint64(0),
 			}
-		case renderer.ImageProxy:
-			view, ok := m.images[proxy.ID]
+		case renderer.ResourceProxyKindImage:
+			view, ok := m.images[proxy.ImageProxy.ID]
 			if !ok {
-				img, ok := bindMap.imageMap[proxy.ID]
+				img, ok := bindMap.imageMap[proxy.ImageProxy.ID]
 				if !ok {
 					panic("unexpected ok == false")
 				}
@@ -862,18 +869,18 @@ func (m *transientBindMap) createCPUResources(
 	bindings []renderer.ResourceProxy,
 ) []cpuBinding {
 	for _, resource := range bindings {
-		switch resource := resource.(type) {
-		case renderer.BufferProxy:
-			switch tbuf := m.bufs[resource.ID].(type) {
+		switch resource.Kind {
+		case renderer.ResourceProxyKindBuffer:
+			switch tbuf := m.bufs[resource.BufferProxy.ID].(type) {
 			case []byte:
 			case *wgpu.Buffer:
 				panic("buffer was already materialized on GPU")
 			case nil:
-				bindMap.materializeCPUBuf(resource)
+				bindMap.materializeCPUBuf(resource.BufferProxy)
 			default:
 				panic(fmt.Sprintf("unhandled type %T", tbuf))
 			}
-		case renderer.ImageProxy:
+		case renderer.ResourceProxyKindImage:
 			panic("not implemented")
 		default:
 			panic(fmt.Sprintf("unhandled type %T", resource))
@@ -882,15 +889,15 @@ func (m *transientBindMap) createCPUResources(
 
 	out := make([]cpuBinding, len(bindings))
 	for i, resource := range bindings {
-		switch resource := resource.(type) {
-		case renderer.BufferProxy:
-			switch tbuf := m.bufs[resource.ID].(type) {
+		switch resource.Kind {
+		case renderer.ResourceProxyKindBuffer:
+			switch tbuf := m.bufs[resource.BufferProxy.ID].(type) {
 			case []byte:
 				out[i] = cpuBuffer(tbuf)
 			default:
-				out[i] = bindMap.getCPUBuf(resource.ID)
+				out[i] = bindMap.getCPUBuf(resource.BufferProxy.ID)
 			}
-		case renderer.ImageProxy:
+		case renderer.ResourceProxyKindImage:
 			panic("not implemented")
 		default:
 			panic(fmt.Sprintf("unhandled type %T", resource))

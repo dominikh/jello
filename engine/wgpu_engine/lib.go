@@ -202,7 +202,7 @@ func (eng *Engine) RenderToTexture(
 
 	externalResources := []ExternalResource{
 		ExternalImage{
-			Proxy: target.(renderer.ImageProxy),
+			Proxy: target.ImageProxy,
 			View:  texture,
 		},
 	}

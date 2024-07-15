@@ -13,9 +13,17 @@ func nextResourceID() ResourceID {
 
 type ResourceID uint64
 
-type ResourceProxy interface {
-	// One of BufferProxy and ImageProxy
-	isResourceProxy()
+type ResourceProxyKind int
+
+const (
+	ResourceProxyKindBuffer ResourceProxyKind = iota + 1
+	ResourceProxyKindImage
+)
+
+type ResourceProxy struct {
+	Kind ResourceProxyKind
+	BufferProxy
+	ImageProxy
 }
 
 type Recording struct {
@@ -74,11 +82,11 @@ func (rec *Recording) FreeImage(image ImageProxy) {
 }
 
 func (rec *Recording) FreeResource(resource ResourceProxy) {
-	switch resource := resource.(type) {
-	case BufferProxy:
-		rec.FreeBuffer(resource)
-	case ImageProxy:
-		rec.FreeImage(resource)
+	switch resource.Kind {
+	case ResourceProxyKindBuffer:
+		rec.FreeBuffer(resource.BufferProxy)
+	case ResourceProxyKindImage:
+		rec.FreeImage(resource.ImageProxy)
 	default:
 		panic(fmt.Sprintf("unhandled type %T", resource))
 	}
@@ -105,7 +113,12 @@ type BufferProxy struct {
 	Name string
 }
 
-func (BufferProxy) isResourceProxy() {}
+func (p BufferProxy) Resource() ResourceProxy {
+	return ResourceProxy{
+		Kind:        ResourceProxyKindBuffer,
+		BufferProxy: p,
+	}
+}
 
 type ImageFormat int
 
@@ -121,7 +134,12 @@ type ImageProxy struct {
 	ID     ResourceID
 }
 
-func (ImageProxy) isResourceProxy() {}
+func (p ImageProxy) Resource() ResourceProxy {
+	return ResourceProxy{
+		Kind:       ResourceProxyKindImage,
+		ImageProxy: p,
+	}
+}
 
 type ShaderID int
 

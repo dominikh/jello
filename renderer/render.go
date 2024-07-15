@@ -1,8 +1,8 @@
 package renderer
 
 import (
-	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/encoding"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/profiler"
 	"honnef.co/go/safeish"
 )
@@ -84,7 +84,7 @@ func (r *Render) RenderEncodingCoarse(
 
 	var recording Recording
 	layout, ramps, images, packed := resolver.Resolve(encoding, nil)
-	var gradientImage ResourceProxy
+	var gradientImage ImageProxy
 	if ramps.Height == 0 {
 		gradientImage = NewImageProxy(1, 1, Rgba8)
 	} else {
@@ -125,7 +125,7 @@ func (r *Render) RenderEncodingCoarse(
 	recording.Dispatch(
 		shaders.PathtagReduce,
 		wgCounts.PathReduce,
-		[]ResourceProxy{configBuf, sceneBuf, reducedBuf},
+		[]ResourceProxy{configBuf.Resource(), sceneBuf.Resource(), reducedBuf.Resource()},
 	)
 	pathtagParent := reducedBuf
 	var largePathtagBufs *[2]ResourceProxy
@@ -138,7 +138,7 @@ func (r *Render) RenderEncodingCoarse(
 		recording.Dispatch(
 			shaders.PathtagReduce2,
 			wgCounts.PathReduce2,
-			[]ResourceProxy{reducedBuf, reduced2Buf},
+			[]ResourceProxy{reducedBuf.Resource(), reduced2Buf.Resource()},
 		)
 		reducedScanBuf := NewBufferProxy(
 			uint64(bufferSizes.PathReducedScan.sizeInBytes()),
@@ -147,10 +147,10 @@ func (r *Render) RenderEncodingCoarse(
 		recording.Dispatch(
 			shaders.PathtagScan1,
 			wgCounts.PathScan1,
-			[]ResourceProxy{reducedBuf, reduced2Buf, reducedScanBuf},
+			[]ResourceProxy{reducedBuf.Resource(), reduced2Buf.Resource(), reducedScanBuf.Resource()},
 		)
 		pathtagParent = reducedScanBuf
-		largePathtagBufs = &[2]ResourceProxy{reduced2Buf, reducedScanBuf}
+		largePathtagBufs = &[2]ResourceProxy{reduced2Buf.Resource(), reducedScanBuf.Resource()}
 	}
 
 	tagmonoidBuf := NewBufferProxy(
@@ -166,9 +166,9 @@ func (r *Render) RenderEncodingCoarse(
 	recording.Dispatch(
 		pathtagScan,
 		wgCounts.PathScan,
-		[]ResourceProxy{configBuf, sceneBuf, pathtagParent, tagmonoidBuf},
+		[]ResourceProxy{configBuf.Resource(), sceneBuf.Resource(), pathtagParent.Resource(), tagmonoidBuf.Resource()},
 	)
-	recording.FreeResource(reducedBuf)
+	recording.FreeResource(reducedBuf.Resource())
 	if largePathtagBufs != nil {
 		recording.FreeResource(largePathtagBufs[0])
 		recording.FreeResource(largePathtagBufs[1])
@@ -180,7 +180,7 @@ func (r *Render) RenderEncodingCoarse(
 	recording.Dispatch(
 		shaders.BboxClear,
 		wgCounts.BboxClear,
-		[]ResourceProxy{configBuf, pathBboxBuf},
+		[]ResourceProxy{configBuf.Resource(), pathBboxBuf.Resource()},
 	)
 	bumpBuf := NewBufferProxy(uint64(bufferSizes.BumpAlloc.sizeInBytes()), "bumpBuf")
 	recording.ClearAll(bumpBuf)
@@ -189,12 +189,12 @@ func (r *Render) RenderEncodingCoarse(
 		shaders.Flatten,
 		wgCounts.Flatten,
 		[]ResourceProxy{
-			configBuf,
-			sceneBuf,
-			tagmonoidBuf,
-			pathBboxBuf,
-			bumpBuf,
-			linesBuf,
+			configBuf.Resource(),
+			sceneBuf.Resource(),
+			tagmonoidBuf.Resource(),
+			pathBboxBuf.Resource(),
+			bumpBuf.Resource(),
+			linesBuf.Resource(),
 		},
 	)
 	drawReducedBuf := NewBufferProxy(
@@ -204,7 +204,7 @@ func (r *Render) RenderEncodingCoarse(
 	recording.Dispatch(
 		shaders.DrawReduce,
 		wgCounts.DrawReduce,
-		[]ResourceProxy{configBuf, sceneBuf, drawReducedBuf},
+		[]ResourceProxy{configBuf.Resource(), sceneBuf.Resource(), drawReducedBuf.Resource()},
 	)
 	drawMonoidBuf := NewBufferProxy(
 		uint64(bufferSizes.DrawMonoids.sizeInBytes()),
@@ -218,16 +218,16 @@ func (r *Render) RenderEncodingCoarse(
 		shaders.DrawLeaf,
 		wgCounts.DrawLeaf,
 		[]ResourceProxy{
-			configBuf,
-			sceneBuf,
-			drawReducedBuf,
-			pathBboxBuf,
-			drawMonoidBuf,
-			infoBinDataBuf,
-			clipInpBuf,
+			configBuf.Resource(),
+			sceneBuf.Resource(),
+			drawReducedBuf.Resource(),
+			pathBboxBuf.Resource(),
+			drawMonoidBuf.Resource(),
+			infoBinDataBuf.Resource(),
+			clipInpBuf.Resource(),
 		},
 	)
-	recording.FreeResource(drawReducedBuf)
+	recording.FreeResource(drawReducedBuf.Resource())
 	clipElBuf := NewBufferProxy(uint64(bufferSizes.ClipEls.sizeInBytes()), "clipElBuf")
 	clipBicBuf := NewBufferProxy(
 		uint64(bufferSizes.ClipBics.sizeInBytes()),
@@ -237,7 +237,7 @@ func (r *Render) RenderEncodingCoarse(
 		recording.Dispatch(
 			shaders.ClipReduce,
 			wgCounts.ClipReduce,
-			[]ResourceProxy{clipInpBuf, pathBboxBuf, clipBicBuf, clipElBuf},
+			[]ResourceProxy{clipInpBuf.Resource(), pathBboxBuf.Resource(), clipBicBuf.Resource(), clipElBuf.Resource()},
 		)
 	}
 	clipBboxBuf := NewBufferProxy(
@@ -249,19 +249,19 @@ func (r *Render) RenderEncodingCoarse(
 			shaders.ClipLeaf,
 			wgCounts.ClipLeaf,
 			[]ResourceProxy{
-				configBuf,
-				clipInpBuf,
-				pathBboxBuf,
-				clipBicBuf,
-				clipElBuf,
-				drawMonoidBuf,
-				clipBboxBuf,
+				configBuf.Resource(),
+				clipInpBuf.Resource(),
+				pathBboxBuf.Resource(),
+				clipBicBuf.Resource(),
+				clipElBuf.Resource(),
+				drawMonoidBuf.Resource(),
+				clipBboxBuf.Resource(),
 			},
 		)
 	}
-	recording.FreeResource(clipInpBuf)
-	recording.FreeResource(clipBicBuf)
-	recording.FreeResource(clipElBuf)
+	recording.FreeResource(clipInpBuf.Resource())
+	recording.FreeResource(clipBicBuf.Resource())
+	recording.FreeResource(clipElBuf.Resource())
 	drawBboxBuf := NewBufferProxy(
 		uint64(bufferSizes.DrawBboxes.sizeInBytes()),
 		"drawBboxBuf",
@@ -274,19 +274,19 @@ func (r *Render) RenderEncodingCoarse(
 		shaders.Binning,
 		wgCounts.Binning,
 		[]ResourceProxy{
-			configBuf,
-			drawMonoidBuf,
-			pathBboxBuf,
-			clipBboxBuf,
-			drawBboxBuf,
-			bumpBuf,
-			infoBinDataBuf,
-			binHeaderBuf,
+			configBuf.Resource(),
+			drawMonoidBuf.Resource(),
+			pathBboxBuf.Resource(),
+			clipBboxBuf.Resource(),
+			drawBboxBuf.Resource(),
+			bumpBuf.Resource(),
+			infoBinDataBuf.Resource(),
+			binHeaderBuf.Resource(),
 		},
 	)
-	recording.FreeResource(drawMonoidBuf)
-	recording.FreeResource(pathBboxBuf)
-	recording.FreeResource(clipBboxBuf)
+	recording.FreeResource(drawMonoidBuf.Resource())
+	recording.FreeResource(pathBboxBuf.Resource())
+	recording.FreeResource(clipBboxBuf.Resource())
 	// Note: this only needs to be rounded up because of the workaround to store the tileOffset
 	// in storage rather than workgroup memory.
 	pathBuf := NewBufferProxy(uint64(bufferSizes.Paths.sizeInBytes()), "pathBuf")
@@ -294,16 +294,16 @@ func (r *Render) RenderEncodingCoarse(
 		shaders.TileAlloc,
 		wgCounts.TileAlloc,
 		[]ResourceProxy{
-			configBuf,
-			sceneBuf,
-			drawBboxBuf,
-			bumpBuf,
-			pathBuf,
-			tileBuf,
+			configBuf.Resource(),
+			sceneBuf.Resource(),
+			drawBboxBuf.Resource(),
+			bumpBuf.Resource(),
+			pathBuf.Resource(),
+			tileBuf.Resource(),
 		},
 	)
-	recording.FreeResource(drawBboxBuf)
-	recording.FreeResource(tagmonoidBuf)
+	recording.FreeResource(drawBboxBuf.Resource())
+	recording.FreeResource(tagmonoidBuf.Resource())
 	indirectCountBuf := NewBufferProxy(
 		uint64(bufferSizes.IndirectCount.sizeInBytes()),
 		"indirectCount",
@@ -311,7 +311,7 @@ func (r *Render) RenderEncodingCoarse(
 	recording.Dispatch(
 		shaders.PathCountSetup,
 		wgCounts.PathCountSetup,
-		[]ResourceProxy{bumpBuf, indirectCountBuf},
+		[]ResourceProxy{bumpBuf.Resource(), indirectCountBuf.Resource()},
 	)
 	segCountsBuf := NewBufferProxy(
 		uint64(bufferSizes.SegCounts.sizeInBytes()),
@@ -322,77 +322,77 @@ func (r *Render) RenderEncodingCoarse(
 		indirectCountBuf,
 		0,
 		[]ResourceProxy{
-			configBuf,
-			bumpBuf,
-			linesBuf,
-			pathBuf,
-			tileBuf,
-			segCountsBuf,
+			configBuf.Resource(),
+			bumpBuf.Resource(),
+			linesBuf.Resource(),
+			pathBuf.Resource(),
+			tileBuf.Resource(),
+			segCountsBuf.Resource(),
 		},
 	)
 	recording.Dispatch(
 		shaders.BackdropDyn,
 		wgCounts.Backdrop,
-		[]ResourceProxy{configBuf, bumpBuf, pathBuf, tileBuf},
+		[]ResourceProxy{configBuf.Resource(), bumpBuf.Resource(), pathBuf.Resource(), tileBuf.Resource()},
 	)
 	recording.Dispatch(
 		shaders.Coarse,
 		wgCounts.Coarse,
 		[]ResourceProxy{
-			configBuf,
-			sceneBuf,
-			drawMonoidBuf,
-			binHeaderBuf,
-			infoBinDataBuf,
-			pathBuf,
-			tileBuf,
-			bumpBuf,
-			ptclBuf,
+			configBuf.Resource(),
+			sceneBuf.Resource(),
+			drawMonoidBuf.Resource(),
+			binHeaderBuf.Resource(),
+			infoBinDataBuf.Resource(),
+			pathBuf.Resource(),
+			tileBuf.Resource(),
+			bumpBuf.Resource(),
+			ptclBuf.Resource(),
 		},
 	)
 	recording.Dispatch(
 		shaders.PathTilingSetup,
 		wgCounts.PathTilingSetup,
-		[]ResourceProxy{bumpBuf, indirectCountBuf, ptclBuf},
+		[]ResourceProxy{bumpBuf.Resource(), indirectCountBuf.Resource(), ptclBuf.Resource()},
 	)
 	recording.DispatchIndirect(
 		shaders.PathTiling,
 		indirectCountBuf,
 		0,
 		[]ResourceProxy{
-			bumpBuf,
-			segCountsBuf,
-			linesBuf,
-			pathBuf,
-			tileBuf,
-			segmentsBuf,
+			bumpBuf.Resource(),
+			segCountsBuf.Resource(),
+			linesBuf.Resource(),
+			pathBuf.Resource(),
+			tileBuf.Resource(),
+			segmentsBuf.Resource(),
 		},
 	)
 	recording.FreeBuffer(indirectCountBuf)
-	recording.FreeResource(segCountsBuf)
-	recording.FreeResource(linesBuf)
-	recording.FreeResource(sceneBuf)
-	recording.FreeResource(drawMonoidBuf)
-	recording.FreeResource(binHeaderBuf)
-	recording.FreeResource(pathBuf)
+	recording.FreeResource(segCountsBuf.Resource())
+	recording.FreeResource(linesBuf.Resource())
+	recording.FreeResource(sceneBuf.Resource())
+	recording.FreeResource(drawMonoidBuf.Resource())
+	recording.FreeResource(binHeaderBuf.Resource())
+	recording.FreeResource(pathBuf.Resource())
 	outImage := NewImageProxy(params.Width, params.Height, Rgba8)
 	r.fineWgCount = wgCounts.Fine
 	r.fineResources = fineResources{
 		aaConfig:       params.AntialiasingMethod,
-		configBuf:      configBuf,
-		bumpBuf:        bumpBuf,
-		tileBuf:        tileBuf,
-		segmentsBuf:    segmentsBuf,
-		ptclBuf:        ptclBuf,
-		gradientImage:  gradientImage,
-		infoBinDataBuf: infoBinDataBuf,
-		imageAtlas:     imageAtlas,
+		configBuf:      configBuf.Resource(),
+		bumpBuf:        bumpBuf.Resource(),
+		tileBuf:        tileBuf.Resource(),
+		segmentsBuf:    segmentsBuf.Resource(),
+		ptclBuf:        ptclBuf.Resource(),
+		gradientImage:  gradientImage.Resource(),
+		infoBinDataBuf: infoBinDataBuf.Resource(),
+		imageAtlas:     imageAtlas.Resource(),
 		outImage:       outImage,
 	}
 	if robust {
 		recording.Download(bumpBuf)
 	}
-	recording.FreeResource(bumpBuf)
+	recording.FreeResource(bumpBuf.Resource())
 	return &recording
 }
 
@@ -412,13 +412,13 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup p
 				fine.segmentsBuf,
 				fine.ptclBuf,
 				fine.infoBinDataBuf,
-				fine.outImage,
+				fine.outImage.Resource(),
 				fine.gradientImage,
 				fine.imageAtlas,
 			},
 		)
 	default:
-		if r.maskBuf == nil {
+		if r.maskBuf.Kind == 0 {
 			var maskLUT []uint8
 			switch fine.aaConfig {
 			case Msaa16:
@@ -429,7 +429,7 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup p
 				panic("unreachable")
 			}
 			buf := recording.Upload("mask lut", maskLUT)
-			r.maskBuf = buf
+			r.maskBuf = buf.Resource()
 		}
 		var fineShader ShaderID
 		switch fine.aaConfig {
@@ -449,7 +449,7 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup p
 				fine.segmentsBuf,
 				fine.ptclBuf,
 				fine.infoBinDataBuf,
-				fine.outImage,
+				fine.outImage.Resource(),
 				fine.gradientImage,
 				fine.imageAtlas,
 				r.maskBuf,
@@ -465,9 +465,9 @@ func (r *Render) RecordFine(shaders *FullShaders, recording *Recording, pgroup p
 	recording.FreeResource(fine.imageAtlas)
 	recording.FreeResource(fine.infoBinDataBuf)
 	// TODO: make mask buf persistent
-	if r.maskBuf != nil {
+	if r.maskBuf.Kind != 0 {
 		recording.FreeResource(r.maskBuf)
-		r.maskBuf = nil
+		r.maskBuf = ResourceProxy{}
 	}
 }
 
@@ -489,5 +489,5 @@ func RenderFull(
 	recording := render.RenderEncodingCoarse(enc, resolver, shaders, params, false, pgroup)
 	outImage := render.OutImage()
 	render.RecordFine(shaders, recording, pgroup)
-	return recording, outImage
+	return recording, outImage.Resource()
 }
