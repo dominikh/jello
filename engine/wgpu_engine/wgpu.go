@@ -264,11 +264,6 @@ func (eng *Engine) RunRecording(
 	// buffers that weren't freed by the end of the frame.
 	bindMap := bindMap{}
 
-	// XXX why do we have a persistent bind map if we clear it at the end of the
-	// frame, anyway? Vello made that change in
-	// e47c5777ccc84b378145d0486d2b1a9b5c737fa0, apparently planning to persist
-	// buffers across recordings in the future.
-
 	encoder := eng.Device.CreateCommandEncoder(mem.Make(arena, wgpu.CommandEncoderDescriptor{Label: label}))
 
 	for _, cmd := range recording.Commands {
@@ -287,7 +282,6 @@ func (eng *Engine) RunRecording(
 			bytes := cmd.Data
 			transientMap.bufs.Insert(arena, bufProxy.ID, transientBuf{kind: transientBufKindBytes, bytes: bytes})
 			usage := wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst
-			// XXXXXX "config" buffer is created here
 			buf := eng.pool.getBuf(bufProxy.Size, bufProxy.Name, usage, eng.Device)
 			queue.WriteBuffer(buf, 0, bytes)
 			bindMap.insertBuf(arena, bufProxy, buf)
@@ -332,7 +326,7 @@ func (eng *Engine) RunRecording(
 				mem.Make(arena, wgpu.TextureDataLayout{
 					Offset:       0,
 					BytesPerRow:  imageProxy.Width * blockSize,
-					RowsPerImage: ^uint32(0), // XXX 0 or Undefined?
+					RowsPerImage: ^uint32(0),
 				}),
 				mem.Make(arena, wgpu.Extent3D{
 					Width:              imageProxy.Width,
@@ -799,9 +793,8 @@ func (m *transientBindMap) createBindGroup(
 				MipLevelCount: 1,
 				SampleCount:   1,
 				Dimension:     wgpu.TextureDimension2D,
-				// XXX this one needs storage binding, apparently?! this is line 887 in wgpu_engine.rs, and they don't set StorageBinding.
-				Usage:  wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst | wgpu.TextureUsageStorageBinding,
-				Format: format,
+				Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+				Format:        format,
 			})
 			textureView := texture.CreateView(&wgpu.TextureViewDescriptor{
 				Dimension:       wgpu.TextureViewDimension2D,

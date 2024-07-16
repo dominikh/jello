@@ -330,7 +330,6 @@ func NewBufferSize[T any](x uint32) BufferSize[T] {
 }
 
 func (s BufferSize[T]) sizeInBytes() uint32 {
-	// XXX can we avoid using unsafe for this?
 	return uint32(s) * uint32(unsafe.Sizeof(*new(T)))
 }
 
