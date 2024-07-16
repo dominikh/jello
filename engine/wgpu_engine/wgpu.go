@@ -147,7 +147,7 @@ func New(dev *wgpu.Device, options *RendererOptions) *Engine {
 	return eng
 }
 
-func (eng *Engine) UseParallelInitialization() {
+func (eng *Engine) useParallelInitialization() {
 	if eng.shadersToInitialize != nil {
 		return
 	}
