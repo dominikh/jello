@@ -162,15 +162,6 @@ func (eng *Engine) buildShadersIfNeeded(numThreads int) {
 	// XXX implement parallelism
 	for _, s := range newShaders {
 		sh := eng.createComputePipeline(s.Label, s.Wgsl, s.Entries)
-		if int(s.ShaderID) >= len(eng.shaders) {
-			if cap(eng.shaders) <= int(s.ShaderID) {
-				c := make([]shader, s.ShaderID+1)
-				copy(c, eng.shaders)
-				eng.shaders = c
-			} else {
-				eng.shaders = eng.shaders[:s.ShaderID+1]
-			}
-		}
 		eng.shaders[s.ShaderID].WGPU = &sh
 	}
 }
