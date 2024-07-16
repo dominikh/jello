@@ -171,7 +171,7 @@ func (eng *Engine) buildShadersIfNeeded(numThreads int) {
 				eng.shaders = eng.shaders[:s.ShaderID+1]
 			}
 		}
-		eng.shaders[s.ShaderID] = shader{WGPU: &sh}
+		eng.shaders[s.ShaderID].WGPU = &sh
 	}
 }
 
