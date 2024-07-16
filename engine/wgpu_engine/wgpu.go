@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
+	"sync"
 
 	"honnef.co/go/jello/mem"
 	"honnef.co/go/jello/renderer"
@@ -141,18 +142,23 @@ func New(dev *wgpu.Device, options *RendererOptions) *Engine {
 		resolver: renderer.NewResolver(),
 	}
 	eng.fullShaders = eng.prepareShaders()
-	eng.buildShaders(1)
+	eng.buildShaders()
 	// XXX support surfaceless engine use
 	eng.blit = newBlitPipeline(eng.Device, options.SurfaceFormat)
 	return eng
 }
 
-func (eng *Engine) buildShaders(numThreads int) {
-	// XXX implement parallelism
+func (eng *Engine) buildShaders() {
+	var wg sync.WaitGroup
+	wg.Add(len(eng.shadersToInitialize))
 	for _, s := range eng.shadersToInitialize {
-		sh := eng.createComputePipeline(s.Label, s.Wgsl, s.Entries)
-		eng.shaders[s.ShaderID].WGPU = &sh
+		go func() {
+			sh := eng.createComputePipeline(s.Label, s.Wgsl, s.Entries)
+			eng.shaders[s.ShaderID].WGPU = &sh
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 }
 
 type cpuShaderType interface {
@@ -541,7 +547,6 @@ func (eng *Engine) createComputePipeline(
 	wgsl []byte,
 	entries []wgpu.BindGroupLayoutEntry,
 ) wgpuShader {
-	// OPT(dh): use SPIR-V instead of WGSL for faster engine creation.
 	shaderModule := eng.Device.CreateShaderModule(wgpu.ShaderModuleDescriptor{
 		Label:  label,
 		Source: wgpu.ShaderSourceWGSL(wgsl),
