@@ -32,7 +32,7 @@ var bindTypeMapping = [...]renderer.BindType{
 	shaders.ImageRead:   {Type: renderer.BindTypeImageRead, ImageFormat: renderer.Rgba8},
 }
 
-func (engine *Engine) newFullShaders() *renderer.FullShaders {
+func (engine *Engine) prepareShaders() *renderer.FullShaders {
 	// XXX make use of options.AntialiasingSupport
 	// XXX support CPU shaders
 	var out renderer.FullShaders
@@ -52,7 +52,7 @@ func (engine *Engine) newFullShaders() *renderer.FullShaders {
 		if len(shader.WGSL.Code) == 0 {
 			panic(fmt.Sprintf("shader %q has no code", shader.Name))
 		}
-		id := engine.addShader(shader.Name, shader.WGSL.Code, bindings, nil)
+		id := engine.prepareShader(shader.Name, shader.WGSL.Code, bindings, nil)
 		outField.Set(reflect.ValueOf(id))
 	}
 	return &out

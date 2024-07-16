@@ -140,27 +140,16 @@ func New(dev *wgpu.Device, options *RendererOptions) *Engine {
 
 		resolver: renderer.NewResolver(),
 	}
-	eng.fullShaders = eng.newFullShaders()
-	eng.buildShadersIfNeeded(1)
+	eng.fullShaders = eng.prepareShaders()
+	eng.buildShaders(1)
 	// XXX support surfaceless engine use
 	eng.blit = newBlitPipeline(eng.Device, options.SurfaceFormat)
 	return eng
 }
 
-func (eng *Engine) useParallelInitialization() {
-	if eng.shadersToInitialize != nil {
-		return
-	}
-	eng.shadersToInitialize = []uninitializedShader{}
-}
-
-func (eng *Engine) buildShadersIfNeeded(numThreads int) {
-	if eng.shadersToInitialize == nil {
-		return
-	}
-	newShaders := eng.shadersToInitialize
+func (eng *Engine) buildShaders(numThreads int) {
 	// XXX implement parallelism
-	for _, s := range newShaders {
+	for _, s := range eng.shadersToInitialize {
 		sh := eng.createComputePipeline(s.Label, s.Wgsl, s.Entries)
 		eng.shaders[s.ShaderID].WGPU = &sh
 	}
@@ -170,18 +159,12 @@ type cpuShaderType interface {
 	// XXX implement
 }
 
-func (eng *Engine) addShader(
+func (eng *Engine) prepareShader(
 	label string,
 	wgsl []byte,
 	layout []renderer.BindType,
 	cpuShader cpuShaderType,
 ) renderer.ShaderID {
-	add := func(shader shader) renderer.ShaderID {
-		id := len(eng.shaders)
-		eng.shaders = append(eng.shaders, shader)
-		return renderer.ShaderID(id)
-	}
-
 	if eng.UseCPU {
 		panic("XXX unimplemented")
 	}
@@ -243,22 +226,15 @@ func (eng *Engine) addShader(
 		}
 	}
 
-	if eng.shadersToInitialize != nil {
-		id := add(shader{Label: label})
-		eng.shadersToInitialize = append(eng.shadersToInitialize, uninitializedShader{
-			Wgsl:     wgsl,
-			Label:    label,
-			Entries:  entries,
-			ShaderID: id,
-		})
-		return id
-	}
-
-	wgpu := eng.createComputePipeline(label, wgsl, entries)
-	return add(shader{
-		Label: label,
-		WGPU:  &wgpu,
+	id := renderer.ShaderID(len(eng.shaders))
+	eng.shaders = append(eng.shaders, shader{Label: label})
+	eng.shadersToInitialize = append(eng.shadersToInitialize, uninitializedShader{
+		Wgsl:     wgsl,
+		Label:    label,
+		Entries:  entries,
+		ShaderID: id,
 	})
+	return id
 }
 
 func (eng *Engine) RunRecording(
