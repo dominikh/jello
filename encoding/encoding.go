@@ -7,8 +7,8 @@ import (
 	"math"
 	"slices"
 
-	"honnef.co/go/jello/gfx"
 	"honnef.co/go/curve"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/jmath"
 	"honnef.co/go/safeish"
 )

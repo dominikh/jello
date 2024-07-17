@@ -4,9 +4,9 @@ import (
 	"iter"
 	"slices"
 
-	"honnef.co/go/jello/gfx"
 	"honnef.co/go/curve"
 	"honnef.co/go/jello/encoding"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/jmath"
 	"honnef.co/go/jello/renderer"
 )
