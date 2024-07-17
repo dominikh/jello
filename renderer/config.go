@@ -119,14 +119,14 @@ func NewBufferSizes(layout *Layout, workgroups *WorkgroupCounts) BufferSizes {
 	pathTagWgs := workgroups.PathReduce[0]
 	var reducedSize uint32
 	if workgroups.UseLargePathScan {
-		reducedSize = jmath.AlignUp32(pathTagWgs, pathReduceWg)
+		reducedSize = jmath.AlignUp(pathTagWgs, pathReduceWg)
 	} else {
 		reducedSize = pathTagWgs
 	}
 	drawMonoidWgs := workgroups.DrawReduce[0]
 
 	binningWgs := workgroups.Binning[0]
-	numPathsALigned := jmath.AlignUp32(numPaths, 256)
+	numPathsALigned := jmath.AlignUp(numPaths, 256)
 
 	// The following buffer sizes have been hand picked to accommodate the vello test scenes as
 	// well as paris-30k. These should instead get derived from the scene layout using
@@ -174,12 +174,12 @@ func NewWorkgroupCounts(
 	numPaths := layout.NumPaths
 	numDrawObjects := layout.NumDrawObjects
 	numClips := layout.NumClips
-	pathTagPadded := jmath.AlignUp32(numPathTags, 4*pathReduceWg)
+	pathTagPadded := jmath.AlignUp(numPathTags, 4*pathReduceWg)
 	pathTagWgs := pathTagPadded / (4 * pathReduceWg)
 	useLargePathScan := pathTagWgs > pathReduceWg
 	var reducedSize uint32
 	if useLargePathScan {
-		reducedSize = jmath.AlignUp32(pathTagWgs, pathReduceWg)
+		reducedSize = jmath.AlignUp(pathTagWgs, pathReduceWg)
 	} else {
 		reducedSize = pathTagWgs
 	}

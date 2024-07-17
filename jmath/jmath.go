@@ -4,6 +4,7 @@ import (
 	"math"
 	"structs"
 
+	"golang.org/x/exp/constraints"
 	"honnef.co/go/curve"
 )
 
@@ -94,12 +95,7 @@ func TransformFromKurbo(transform curve.Affine) Transform {
 	}
 }
 
-func AlignUp(len int, alignment int) int {
-	return (len + alignment - 1) & -alignment
-}
-
-// TODO(dh): make alignUp generic and remove alignUpU32
-func AlignUp32(len uint32, alignment uint32) uint32 {
+func AlignUp[Int constraints.Integer](len Int, alignment Int) Int {
 	return (len + alignment - 1) & -alignment
 }
 
