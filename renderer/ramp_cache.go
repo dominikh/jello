@@ -90,68 +90,40 @@ func makeRamp(stops []gfx.ColorStop) []uint32 {
 
 	out := make([]uint32, numSamples)
 
-	lastU := 0.0
-	lastC := colorf64{
-		float64(stops[0].Color.R) / 255.0,
-		float64(stops[0].Color.G) / 255.0,
-		float64(stops[0].Color.B) / 255.0,
-		float64(stops[0].Color.A) / 255.0,
-	}
+	lastU := float32(0.0)
+	lastC := stops[0].Color
 	thisU := lastU
 	thisC := lastC
 	j := 0
 	for i := range numSamples {
-		u := float64(i) / (numSamples - 1)
+		u := float32(i) / (numSamples - 1)
 		for u > thisU {
 			lastU = thisU
 			lastC = thisC
 			if j+1 < len(stops) {
 				s := stops[j+1]
-				thisU = float64(s.Offset)
-				thisC = colorF64FromColor(s.Color)
+				thisU = float32(s.Offset)
+				thisC = s.Color
 				j++
 			} else {
 				break
 			}
 		}
 		du := thisU - lastU
-		var c colorf64
+		var c gfx.Color
 		if du < 1e-9 {
 			c = thisC
 		} else {
-			c = lastC.lerp(&thisC, (u-lastU)/du)
+			c = lerp(lastC, thisC, (u-lastU)/du)
 		}
-		out[i] = c.asPremulU32()
+		out[i] = premulUint32(c)
 	}
 
 	return out
 }
 
-type colorf64 [4]float64
-
-func colorF64FromColor(c gfx.Color) colorf64 {
-	return colorf64{
-		float64(c.R) / 255.0,
-		float64(c.G) / 255.0,
-		float64(c.B) / 255.0,
-		float64(c.A) / 255.0,
-	}
-}
-
-func (c *colorf64) lerp(other *colorf64, a float64) colorf64 {
-	l := func(x, y, a float64) float64 {
-		return x*(1.0-a) + y*a
-	}
-	return colorf64{
-		l(c[0], other[0], a),
-		l(c[1], other[1], a),
-		l(c[2], other[2], a),
-		l(c[3], other[3], a),
-	}
-}
-
-func (c *colorf64) asPremulU32() uint32 {
-	clamp := func(v, low, high float64) float64 {
+func premulUint32(c gfx.Color) uint32 {
+	clamp := func(v, low, high float32) float32 {
 		if v < low {
 			return low
 		}
@@ -160,11 +132,23 @@ func (c *colorf64) asPremulU32() uint32 {
 		}
 		return v
 	}
-	a := clamp(c[3], 0.0, 1.0)
-	r := uint32(clamp(c[0]*a, 0.0, 1.0) * 255.0)
-	g := uint32(clamp(c[1]*a, 0.0, 1.0) * 255.0)
-	b := uint32(clamp(c[2]*a, 0.0, 1.0) * 255.0)
-
+	a := clamp(c.A, 0, 1)
+	r := uint32(clamp(c.R*a, 0, 1) * 255)
+	g := uint32(clamp(c.G*a, 0, 1) * 255)
+	b := uint32(clamp(c.B*a, 0, 1) * 255)
 	ua := uint32(a * 255.0)
-	return r | (g << 8) | (b << 16) | (ua << 24)
+	// TODO(dh): why is this the other way around from Color.PremulUint32?
+	return (r) | (g << 8) | (b << 16) | (ua << 24)
+}
+
+func lerp(c gfx.Color, other gfx.Color, a float32) gfx.Color {
+	l := func(x, y, a float32) float32 {
+		return x*(1.0-a) + y*a
+	}
+	return gfx.Color{
+		R: l(c.R, other.R, a),
+		G: l(c.G, other.G, a),
+		B: l(c.B, other.B, a),
+		A: l(c.A, other.A, a),
+	}
 }
