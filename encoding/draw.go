@@ -45,7 +45,7 @@ type drawColor struct {
 }
 
 func newDrawColor(color gfx.Color) drawColor {
-	return drawColor{RGBA: color.PremulUint32()}
+	return drawColor{RGBA: color.LinearSRGB().PremulUint32()}
 }
 
 type drawLinearGradient struct {

@@ -1,7 +1,10 @@
 package renderer
 
 import (
+	"encoding/binary"
+	"math"
 	"strings"
+	"unsafe"
 
 	"honnef.co/go/jello/gfx"
 	"honnef.co/go/safeish"
@@ -23,6 +26,9 @@ type rampCache struct {
 	// mapping from []ColorStop
 	mapping map[string]*rampCacheEntry
 	data    []uint32
+
+	// slice reused across calls to add, used for building the map key.
+	key []byte
 }
 
 const numSamples = 512
@@ -41,15 +47,48 @@ func (rc *rampCache) maintain() {
 }
 
 func (rc *rampCache) add(stops []gfx.ColorStop) uint32 {
-	key := safeish.Cast[string](safeish.SliceCast[[]byte](stops))
-	if entry, ok := rc.mapping[key]; ok {
+	key := rc.key[:0]
+	// Adding the number of stops makes the key unique for different length
+	// sequences of colors that would have the same concatenation.
+	key = binary.LittleEndian.AppendUint64(key, uint64(len(stops)))
+	for _, stop := range stops {
+		if stop.Color == nil {
+			panic("nil color in gradient")
+		}
+
+		key = binary.LittleEndian.AppendUint32(key, math.Float32bits(stop.Offset))
+		type iface struct {
+			tab *struct {
+				_   uintptr
+				typ *struct {
+					size uintptr
+					_    uintptr
+					hash uint32
+				}
+			}
+			data unsafe.Pointer
+		}
+		v := safeish.Cast[*iface](&stop.Color)
+		// This assumes that the type doesn't move in memory. But even if it
+		// does, because we're also incorporating the type hash, the odds of a
+		// collision are miniscule, so at worst we fail to reuse a cached entry.
+		key = binary.LittleEndian.AppendUint64(key, uint64(uintptr(unsafe.Pointer(v.tab.typ))))
+		key = binary.LittleEndian.AppendUint32(key, v.tab.typ.hash)
+		if v.data != nil {
+			key = append(key, unsafe.Slice((*byte)(v.data), v.tab.typ.size)...)
+		}
+	}
+	rc.key = key[:0]
+
+	keyStr := safeish.Cast[string](key)
+	if entry, ok := rc.mapping[keyStr]; ok {
 		entry.epoch = rc.epoch
 		return entry.id
 	} else if len(rc.mapping) < retainedCount {
 		id := uint32(len(rc.data) / numSamples)
 		rc.data = append(rc.data, makeRamp(stops)...)
 		// Copy the key so it no longer aliases a slice
-		rc.mapping[strings.Clone(key)] = &rampCacheEntry{id, rc.epoch}
+		rc.mapping[strings.Clone(keyStr)] = &rampCacheEntry{id, rc.epoch}
 		return id
 	} else {
 		var reuseID uint32
@@ -114,22 +153,10 @@ func makeRamp(stops []gfx.ColorStop) []uint32 {
 		if du < 1e-9 {
 			c = thisC
 		} else {
-			c = lerp(lastC, thisC, (u-lastU)/du)
+			c = lastC.Lerp(thisC, (u-lastU)/du)
 		}
-		out[i] = c.PremulUint32()
+		out[i] = c.LinearSRGB().PremulUint32()
 	}
 
 	return out
-}
-
-func lerp(c gfx.Color, other gfx.Color, a float32) gfx.Color {
-	l := func(x, y, a float32) float32 {
-		return x*(1.0-a) + y*a
-	}
-	return gfx.Color{
-		R: l(c.R, other.R, a),
-		G: l(c.G, other.G, a),
-		B: l(c.B, other.B, a),
-		A: l(c.A, other.A, a),
-	}
 }

@@ -97,7 +97,7 @@ func NewRenderConfig(arena *mem.Arena, layout *Layout, width, height uint32, bas
 			HeightInTiles: heightInTiles,
 			TargetWidth:   width,
 			TargetHeight:  height,
-			BaseColor:     baseColor.PremulUint32(),
+			BaseColor:     baseColor.LinearSRGB().PremulUint32(),
 			LinesSize:     uint32(bufferSizes.Lines),
 			BinningSize:   uint32(bufferSizes.BinData) - layout.BinDataStart,
 			TilesSize:     uint32(bufferSizes.Tiles),
