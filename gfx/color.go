@@ -48,5 +48,5 @@ func (c Color) PremulUint32() uint32 {
 	g := uint32(clamp(c.G*a, 0, 1) * 255)
 	b := uint32(clamp(c.B*a, 0, 1) * 255)
 	ua := uint32(a * 255.0)
-	return (r << 24) | (g << 16) | (b << 8) | ua
+	return r | (g << 8) | (b << 16) | (ua << 24)
 }

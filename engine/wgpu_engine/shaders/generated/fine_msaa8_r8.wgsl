@@ -64,7 +64,7 @@ struct Config {
     target_height: u32,
 
     // The initial color applied to the pixels in a tile during the fine stage.
-    // This is only used in the full pipeline. The format is packed RGBA8 in MSB
+    // This is only used in the full pipeline. The format is packed RGBA8 in LSB
     // order.
     base_color: u32,
 
@@ -1210,7 +1210,10 @@ fn main(
     let local_xy = vec2(f32(local_id.x * PIXELS_PER_THREAD), f32(local_id.y));
     var rgba: array<vec4<f32>, PIXELS_PER_THREAD>;
     for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
-        rgba[i] = unpack4x8unorm(config.base_color).wzyx;
+        // Note: this differs from Vello, which uses .wzyx.
+        // We changed it so that base color, ramps, and commands all
+		// use the same format.
+        rgba[i] = unpack4x8unorm(config.base_color);
     }
     var blend_stack: array<array<u32, PIXELS_PER_THREAD>, BLEND_STACK_SPLIT>;
     var clip_depth = 0u;
@@ -1238,7 +1241,10 @@ fn main(
             }
             case CMD_COLOR: {
                 let color = read_color(cmd_ix);
-                let fg = unpack4x8unorm(color.rgba_color).wzyx;
+                // Note: this differs from Vello, which uses .wzyx.
+                // We changed it so that base color, ramps, and commands all
+				// use the same format.
+                let fg = unpack4x8unorm(color.rgba_color);
                 for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
                     let fg_i = fg * area[i];
                     rgba[i] = rgba[i] * (1.0 - fg_i.a) + fg_i;

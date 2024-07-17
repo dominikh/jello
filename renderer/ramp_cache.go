@@ -116,29 +116,10 @@ func makeRamp(stops []gfx.ColorStop) []uint32 {
 		} else {
 			c = lerp(lastC, thisC, (u-lastU)/du)
 		}
-		out[i] = premulUint32(c)
+		out[i] = c.PremulUint32()
 	}
 
 	return out
-}
-
-func premulUint32(c gfx.Color) uint32 {
-	clamp := func(v, low, high float32) float32 {
-		if v < low {
-			return low
-		}
-		if v > high {
-			return high
-		}
-		return v
-	}
-	a := clamp(c.A, 0, 1)
-	r := uint32(clamp(c.R*a, 0, 1) * 255)
-	g := uint32(clamp(c.G*a, 0, 1) * 255)
-	b := uint32(clamp(c.B*a, 0, 1) * 255)
-	ua := uint32(a * 255.0)
-	// TODO(dh): why is this the other way around from Color.PremulUint32?
-	return (r) | (g << 8) | (b << 16) | (ua << 24)
 }
 
 func lerp(c gfx.Color, other gfx.Color, a float32) gfx.Color {
