@@ -43,12 +43,9 @@ func (t Transform) Mul(other Transform) Transform {
 	}
 }
 
-// / Converts an f32 to IEEE-754 binary16 format represented as the bits of a u16.
-// / This implementation was adapted from Fabian Giesen's `float_to_half_fast3`()
-// / function which can be found at <https://gist.github.com/rygorous/2156668#file-gistfile1-cpp-L285>
-// /
-// / TODO: We should consider adopting <https://crates.io/crates/half> as a dependency since it nicely
-// / wraps native ARM and x86 instructions for floating-point conversion.
+// Float16 converts a float32 to IEEE-754 binary16 format represented as the bits of a u16.
+// This implementation was adapted from Fabian Giesen's `float_to_half_fast3`()
+// function which can be found at <https://gist.github.com/rygorous/2156668#file-gistfile1-cpp-L285>
 func Float16(val float32) uint16 {
 	const inf32 uint32 = 255 << 23
 	const inf16 uint32 = 31 << 23

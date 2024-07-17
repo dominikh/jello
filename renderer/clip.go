@@ -7,9 +7,9 @@ type Clip struct {
 
 	// Index of the draw object.
 	Idx uint32
-	/// This is a packed encoding of an enum with the sign bit as the tag. If positive,
-	/// this entry is a `BeginClip` and contains the associated path index. If negative,
-	/// it is an `EndClip` and contains the bitwise-not of the `EndClip` draw object index.
+	// This is a packed encoding of an enum with the sign bit as the tag. If positive,
+	// this entry is a `BeginClip` and contains the associated path index. If negative,
+	// it is an `EndClip` and contains the bitwise-not of the `EndClip` draw object index.
 	PathIdx int32
 }
 
@@ -22,9 +22,9 @@ type ClipBbox struct {
 type ClipBic struct {
 	_ structs.HostLayout
 
-	/// When interpreted as a stack operation, the number of pop operations.
+	// When interpreted as a stack operation, the number of pop operations.
 	A uint32
-	/// When interpreted as a stack operation, the number of push operations.
+	// When interpreted as a stack operation, the number of push operations.
 	B uint32
 }
 

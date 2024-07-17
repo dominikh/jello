@@ -6,8 +6,8 @@ import (
 	"math"
 	"structs"
 
-	"honnef.co/go/jello/gfx"
 	"honnef.co/go/curve"
+	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/jmath"
 )
 
@@ -19,25 +19,25 @@ type Style struct {
 }
 
 const (
-	/// 0 for a fill, 1 for a stroke
+	// 0 for a fill, 1 for a stroke
 	flagsStyleBit uint32 = 0x8000_0000
 
-	/// 0 for non-zero, 1 for even-odd
+	// 0 for non-zero, 1 for even-odd
 	flagsFillBit uint32 = 0x4000_0000
 
-	/// Encodings for join style:
-	///    - 0b00 -> bevel
-	///    - 0b01 -> miter
-	///    - 0b10 -> round
+	// Encodings for join style:
+	//    - 0b00 -> bevel
+	//    - 0b01 -> miter
+	//    - 0b10 -> round
 	flagsJoinBitsBevel uint32 = 0
 	flagsJoinBitsMiter uint32 = 0x1000_0000
 	flagsJoinBitsRound uint32 = 0x2000_0000
 	flagsJoinMask      uint32 = 0x3000_0000
 
-	/// Encodings for cap style:
-	///    - 0b00 -> butt
-	///    - 0b01 -> square
-	///    - 0b10 -> round
+	// Encodings for cap style:
+	//    - 0b00 -> butt
+	//    - 0b01 -> square
+	//    - 0b10 -> round
 	flagsCapBitsButt   uint32 = 0
 	flagsCapBitsSquare uint32 = 0x0100_0000
 	flagsCapBitsRound  uint32 = 0x0200_0000
@@ -112,47 +112,47 @@ const (
 type PathTag uint8
 
 const (
-	/// 32-bit floating point line segment.
-	///
-	/// This is equivalent to `(PathSegmentType::LineTo | PathTag::F32_BIT)`.
+	// 32-bit floating point line segment.
+	//
+	// This is equivalent to `(PathSegmentType::LineTo | PathTag::F32_BIT)`.
 	PathTagLineToF32 PathTag = 0x9
 
-	/// 32-bit floating point quadratic segment.
-	///
-	/// This is equivalent to `(PathSegmentType::QUAD_TO | PathTag::F32_BIT)`.
+	// 32-bit floating point quadratic segment.
+	//
+	// This is equivalent to `(PathSegmentType::QUAD_TO | PathTag::F32_BIT)`.
 	PathTagQuadToF32 PathTag = 0xa
 
-	/// 32-bit floating point cubic segment.
-	///
-	/// This is equivalent to `(PathSegmentType::CUBIC_TO | PathTag::F32_BIT)`.
+	// 32-bit floating point cubic segment.
+	//
+	// This is equivalent to `(PathSegmentType::CUBIC_TO | PathTag::F32_BIT)`.
 	PathTagCubicToF32 PathTag = 0xb
 
-	/// 16-bit integral line segment.
+	// 16-bit integral line segment.
 	PathTagLineToI16 PathTag = 0x1
 
-	/// 16-bit integral quadratic segment.
+	// 16-bit integral quadratic segment.
 	PathTagQuadToI16 PathTag = 0x2
 
-	/// 16-bit integral cubic segment.
+	// 16-bit integral cubic segment.
 	PathTagCubicToI16 PathTag = 0x3
 
-	/// Transform marker.
+	// Transform marker.
 	PathTagTransform PathTag = 0x20
 
-	/// Path marker.
+	// Path marker.
 	PathTagPath PathTag = 0x10
 
-	/// Style setting.
+	// Style setting.
 	PathTagStyle PathTag = 0x40
 
-	/// Bit that marks a segment that is the end of a subpath.
+	// Bit that marks a segment that is the end of a subpath.
 	PathTagSubpathEndBit PathTag = 0x4
 
-	/// Bit for path segments that are represented as f32 values. If unset
-	/// they are represented as i16.
+	// Bit for path segments that are represented as f32 values. If unset
+	// they are represented as i16.
 	PathTagF32Bit PathTag = 0x8
 
-	/// Mask for bottom 3 bits that contain the [`PathSegmentType`].
+	// Mask for bottom 3 bits that contain the [`PathSegmentType`].
 	PathTagSegmentMask PathTag = 0x3
 )
 

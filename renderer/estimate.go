@@ -8,11 +8,8 @@ import (
 	"honnef.co/go/jello/jmath"
 )
 
-//! This utility provides conservative size estimation for buffer allocations backing
-//! GPU bump memory. This estimate relies on heuristics and naturally overestimates.
-
-// use super::{BumpAllocatorMemory, BumpAllocators, Transform};
-// use peniko::kurbo::{Cap, Join, PathEl, Point, Stroke, Vec2};
+// This utility provides conservative size estimation for buffer allocations backing
+// GPU bump memory. This estimate relies on heuristics and naturally overestimates.
 
 const rsqrtOfTol = 2.2360679775 // tol = 0.2
 
@@ -45,8 +42,7 @@ func (be *BumpEstimator) Reset() {
 	*be = BumpEstimator{}
 }
 
-// impl BumpEstimator {
-// / Combine the counts of this estimator with `other` after applying an optional `transform`.
+// Append combines the counts of this estimator with other after applying an optional transform.
 func (be *BumpEstimator) Append(other *BumpEstimator, transform *jmath.Transform) {
 	scale := transformScale(transform)
 	be.segments += uint32(math.Ceil(float64(other.segments) * scale))
@@ -162,7 +158,7 @@ func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t jmath.Tr
 	est.countStrokeJoins(style.Join, scaledWidth, style.MiterLimit, joins)
 }
 
-// / Produce the final total, applying an optional transform to all content.
+// Tally produces the final total, applying an optional transform to all content.
 func (est *BumpEstimator) Tally(transform *jmath.Transform) BumpAllocatorMemory {
 	scale := transformScale(transform)
 
@@ -322,33 +318,33 @@ func countSegmentsForLineLength(scaledWidth float64) uint32 {
 	return max(1, uint32(math.Ceil(scaledWidth*0.0625*math.Sqrt2)))
 }
 
-/// Wang's Formula (as described in Pyramid Algorithms by Ron Goldman, 2003, Chapter 5, Section
-/// 5.6.3 on Bezier Approximation) is a fast method for computing a lower bound on the number of
-/// recursive subdivisions required to approximate a Bezier curve within a certain tolerance. The
-/// formula for a Bezier curve of degree `n`, control points `p[0]...p[n]`, and number of levels of
-/// subdivision `l`, and flattening tolerance `tol` is defined as follows:
-///
-/// ```ignore
-///     m = max([length(p[k+2] - 2 * p[k+1] + p[k]) for (0 <= k <= n-2)])
-///     l >= log_4((n * (n - 1) * m) / (8 * tol))
-/// ```
-///
-/// For recursive subdivisions that split a curve into 2 segments at each level, the minimum number
-/// of segments is given by 2^l. From the formula above it follows that:
-///
-/// ```ignore
-///       segments >= 2^l >= 2^log_4(x)                      (1)
-///     segments^2 >= 2^(2*log_4(x)) >= 4^log_4(x)           (2)
-///     segments^2 >= x
-///       segments >= sqrt((n * (n - 1) * m) / (8 * tol))    (3)
-/// ```
-///
-/// Wang's formula computes an error bound on recursive subdivision based on the second derivative
-/// which tends to result in a suboptimal estimate when the curvature within the curve has a lot of
-/// variation. This is expected to frequently overshoot the flattening formula used in vello, which
-/// is closer to optimal (vello uses a method based on a numerical approximation of the integral
-/// over the continuous change in the number of flattened segments, with an error expressed in terms
-/// of curvature and infinitesimal arclength).
+// Wang's Formula (as described in Pyramid Algorithms by Ron Goldman, 2003, Chapter 5, Section
+// 5.6.3 on Bezier Approximation) is a fast method for computing a lower bound on the number of
+// recursive subdivisions required to approximate a Bezier curve within a certain tolerance. The
+// formula for a Bezier curve of degree `n`, control points `p[0]...p[n]`, and number of levels of
+// subdivision `l`, and flattening tolerance `tol` is defined as follows:
+//
+// ```ignore
+//     m = max([length(p[k+2] - 2 * p[k+1] + p[k]) for (0 <= k <= n-2)])
+//     l >= log_4((n * (n - 1) * m) / (8 * tol))
+// ```
+//
+// For recursive subdivisions that split a curve into 2 segments at each level, the minimum number
+// of segments is given by 2^l. From the formula above it follows that:
+//
+// ```ignore
+//       segments >= 2^l >= 2^log_4(x)                      (1)
+//     segments^2 >= 2^(2*log_4(x)) >= 4^log_4(x)           (2)
+//     segments^2 >= x
+//       segments >= sqrt((n * (n - 1) * m) / (8 * tol))    (3)
+// ```
+//
+// Wang's formula computes an error bound on recursive subdivision based on the second derivative
+// which tends to result in a suboptimal estimate when the curvature within the curve has a lot of
+// variation. This is expected to frequently overshoot the flattening formula used in vello, which
+// is closer to optimal (vello uses a method based on a numerical approximation of the integral
+// over the continuous change in the number of flattened segments, with an error expressed in terms
+// of curvature and infinitesimal arclength).
 
 // The curve degree term sqrt(n * (n - 1) / 8) specialized for cubics:
 //

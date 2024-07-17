@@ -5,32 +5,32 @@ import "structs"
 type PathMonoid struct {
 	_ structs.HostLayout
 
-	/// Index into transform stream.
+	// Index into transform stream.
 	TransIdx uint32
-	/// Path segment index.
+	// Path segment index.
 	PathSegIdx uint32
-	/// Offset into path segment stream.
+	// Offset into path segment stream.
 	PathSegOffset uint32
-	/// Index into style stream.
+	// Index into style stream.
 	StyleIdx uint32
-	/// Index of containing path.
+	// Index of containing path.
 	PathIdx uint32
 }
 
 type PathBbox struct {
 	_ structs.HostLayout
 
-	/// Minimum x value.
+	// Minimum x value.
 	X0 int32
-	/// Minimum y value.
+	// Minimum y value.
 	Y0 int32
-	/// Maximum x value.
+	// Maximum x value.
 	X1 int32
-	/// Maximum y value.
+	// Maximum y value.
 	Y1 int32
-	/// Style flags
+	// Style flags
 	DrawFlags uint32
-	/// Index into the transform stream.
+	// Index into the transform stream.
 	TransIdx uint32
 }
 

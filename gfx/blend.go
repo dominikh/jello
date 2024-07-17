@@ -11,7 +11,7 @@ import "fmt"
 //
 // Specifically, Clear and SrcOver have been swapped.
 
-// / Defines the color mixing function for a [blend operation](BlendMode).
+// Mix defines the color mixing function for a [blend operation](BlendMode).
 type Mix uint8
 
 const (
@@ -70,7 +70,7 @@ const (
 	MixClip Mix = 128
 )
 
-// / Defines the layer composition function for a [blend operation](BlendMode).
+// Compose defines the layer composition function for a [blend operation](BlendMode).
 type Compose uint8
 
 const (
@@ -107,7 +107,7 @@ const (
 	ComposePlusLighter Compose = 13
 )
 
-// / Blend mode consisting of [color mixing](Mix) and [composition functions](Compose).
+// BlendMode specifies the blend mode consisting of color mixing and composition functions.
 type BlendMode struct {
 	// The color mixing function
 	Mix Mix

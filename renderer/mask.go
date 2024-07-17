@@ -2,8 +2,6 @@ package renderer
 
 import "encoding/binary"
 
-//! Create a lookup table of half-plane sample masks.
-
 // Width is number of discrete translations
 const maskWidth = 32
 
@@ -33,11 +31,11 @@ func oneMask(slope float64, translation float64, isPos bool) uint8 {
 var maskLUT8 = makeMaskLUT()
 var maskLUT16 = makeMaskLUT16()
 
-// / Make a lookup table of half-plane masks.
-// /
-// / The table is organized into two blocks each with `maskHeight/2` slopes.
-// / The first block is negative slopes (x decreases as y increates),
-// / the second as positive.
+// makeMaskLUT makes a lookup table of half-plane masks.
+//
+// The table is organized into two blocks each with `maskHeight/2` slopes.
+// The first block is negative slopes (x decreases as y increates),
+// the second as positive.
 func makeMaskLUT() []uint8 {
 	var out []uint8
 	for i := range maskWidth * maskHeight {
@@ -81,11 +79,11 @@ func oneMask16(slope float64, translation float64, isPos bool) uint16 {
 	return result
 }
 
-// / Make a lookup table of half-plane masks.
-// /
-// / The table is organized into two blocks each with `mask16Height/2` slopes.
-// / The first block is negative slopes (x decreases as y increates),
-// / the second as positive.
+// makeMaskLUT16 makes a lookup table of half-plane masks.
+//
+// The table is organized into two blocks each with `mask16Height/2` slopes.
+// The first block is negative slopes (x decreases as y increates),
+// the second as positive.
 func makeMaskLUT16() []uint8 {
 	var out []uint8
 	for i := range mask16Width * mask16Height {

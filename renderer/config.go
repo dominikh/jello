@@ -12,61 +12,61 @@ import (
 
 type WorkgroupSize [3]uint32
 
-// / Uniform render configuration data used by all GPU stages.
-// /
-// / This data structure must be kept in sync with the definition in
-// / `shaders/shared/config.wgsl`.
+// ConfigUniform contains uniform render configuration data used by all GPU stages.
+//
+// This data structure must be kept in sync with the definition in
+// `shaders/shared/config.wgsl`.
 type ConfigUniform struct {
 	_ structs.HostLayout
 
-	/// Width of the scene in tiles.
+	// Width of the scene in tiles.
 	WidthInTiles uint32
-	/// Height of the scene in tiles.
+	// Height of the scene in tiles.
 	HeightInTiles uint32
-	/// Width of the target in pixels.
+	// Width of the target in pixels.
 	TargetWidth uint32
-	/// Height of the target in pixels.
+	// Height of the target in pixels.
 	TargetHeight uint32
-	/// The base background color applied to the target before any blends.
+	// The base background color applied to the target before any blends.
 	BaseColor uint32
-	/// Layout of packed scene data.
+	// Layout of packed scene data.
 	Layout Layout
-	/// Size of line soup buffer allocation (in [`LineSoup`]s)
+	// Size of line soup buffer allocation (in [`LineSoup`]s)
 	LinesSize uint32
-	/// Size of binning buffer allocation (in `uint32`s).
+	// Size of binning buffer allocation (in `uint32`s).
 	BinningSize uint32
-	/// Size of tile buffer allocation (in [`Tile`]s).
+	// Size of tile buffer allocation (in [`Tile`]s).
 	TilesSize uint32
-	/// Size of segment count buffer allocation (in [`SegmentCount`]s).
+	// Size of segment count buffer allocation (in [`SegmentCount`]s).
 	SegCountsSize uint32
-	/// Size of segment buffer allocation (in [`PathSegment`]s).
+	// Size of segment buffer allocation (in [`PathSegment`]s).
 	SegmentsSize uint32
-	/// Size of per-tile command list buffer allocation (in `uint32`s).
+	// Size of per-tile command list buffer allocation (in `uint32`s).
 	PtclSize uint32
 }
 
 type Layout struct {
 	_ structs.HostLayout
 
-	/// Number of draw objects.
+	// Number of draw objects.
 	NumDrawObjects uint32
-	/// Number of paths.
+	// Number of paths.
 	NumPaths uint32
-	/// Number of clips.
+	// Number of clips.
 	NumClips uint32
-	/// Start of binning data.
+	// Start of binning data.
 	BinDataStart uint32
-	/// Start of path tag stream.
+	// Start of path tag stream.
 	PathTagBase uint32
-	/// Start of path data stream.
+	// Start of path data stream.
 	PathDataBase uint32
-	/// Start of draw tag stream.
+	// Start of draw tag stream.
 	DrawTagBase uint32
-	/// Start of draw data stream.
+	// Start of draw data stream.
 	DrawDataBase uint32
-	/// Start of transform stream.
+	// Start of transform stream.
 	TransformBase uint32
-	/// Start of style stream.
+	// Start of style stream.
 	StyleBase uint32
 }
 
@@ -343,11 +343,11 @@ type BumpAllocatorMemory struct {
 	Lines     BufferSize[LineSoup]
 }
 
-// / Storage of indirect dispatch size values.
-// /
-// / The original plan was to reuse [`BumpAllocators`], but the WebGPU compatible
-// / usage list rules forbid that being used as indirect counts while also
-// / bound as writable.
+// IndirectCount stores indirect dispatch size values.
+//
+// The original plan was to reuse [BumpAllocators], but the WebGPU compatible
+// usage list rules forbid that being used as indirect counts while also
+// bound as writable.
 type IndirectCount struct {
 	_ structs.HostLayout
 
