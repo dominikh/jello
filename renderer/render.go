@@ -1,7 +1,6 @@
 package renderer
 
 import (
-	"fmt"
 	"image"
 
 	"honnef.co/go/jello/encoding"
@@ -99,7 +98,11 @@ func (r *Render) RenderEncodingCoarse(
 			ramps.Width,
 			ramps.Height,
 			Rgba8,
-			data,
+			&image.RGBA{
+				Pix:    data,
+				Stride: 4 * int(ramps.Width),
+				Rect:   image.Rect(0, 0, int(ramps.Width), int(ramps.Height)),
+			},
 		)
 	}
 
@@ -111,36 +114,13 @@ func (r *Render) RenderEncodingCoarse(
 	}
 	// XXX handle when there are more images than slots in the array
 	for _, img := range images {
-		var data []byte
-		switch img := img.Image.(type) {
-		case *image.NRGBA:
-			// not premultiplied
-
-			// XXX we need to premultiply the data
-			data = img.Pix
-
-			if img.Stride != 4*img.Rect.Dx() {
-				// XXX
-				panic("subimages are not supported")
-			}
-		case *image.RGBA:
-			// premultiplied
-			data = img.Pix
-			if img.Stride != 4*img.Rect.Dx() {
-				// XXX
-				panic("subimages are not supported")
-			}
-		default:
-			// XXX convert to a supported format
-			panic(fmt.Sprintf("unsupported image type %T", img))
-		}
 		proxy := recording.UploadImage(
 			arena,
 			uint32(img.Image.Bounds().Dx()),
 			uint32(img.Image.Bounds().Dy()),
 			// XXX support non-sRGB images
 			Rgba8Srgb,
-			data,
+			img.Image,
 		)
 		imageProxies = mem.Append(arena, imageProxies, proxy)
 	}

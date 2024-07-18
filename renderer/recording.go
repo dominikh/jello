@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"fmt"
+	"image"
 	"sync/atomic"
 
 	"honnef.co/go/jello/mem"
@@ -50,7 +51,7 @@ func (rec *Recording) UploadUniform(arena *mem.Arena, name string, data []byte) 
 	return buf
 }
 
-func (rec *Recording) UploadImage(arena *mem.Arena, width, height uint32, format ImageFormat, data []byte) ImageProxy {
+func (rec *Recording) UploadImage(arena *mem.Arena, width, height uint32, format ImageFormat, data image.Image) ImageProxy {
 	imageProxy := NewImageProxy(width, height, format)
 	rec.push(arena, mem.Make(arena, UploadImage{imageProxy, data}))
 	return imageProxy
@@ -191,14 +192,14 @@ type UploadUniform struct {
 }
 
 type UploadImage struct {
-	Image ImageProxy
-	Data  []byte
+	Proxy ImageProxy
+	Image image.Image
 }
 
 type WriteImage struct {
-	Image  ImageProxy
+	Proxy  ImageProxy
 	Coords [4]uint32
-	Data   []byte
+	Image  image.Image
 }
 
 type Dispatch struct {

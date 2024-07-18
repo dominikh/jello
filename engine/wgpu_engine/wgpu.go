@@ -4,6 +4,7 @@ package wgpu_engine
 
 import (
 	"fmt"
+	"image"
 	"math"
 	"math/bits"
 	"sync"
@@ -255,6 +256,31 @@ func (eng *Engine) prepareShader(
 	return id
 }
 
+func imageData(img image.Image) []byte {
+	switch img := img.(type) {
+	case *image.NRGBA:
+		// not premultiplied
+
+		if img.Stride != 4*img.Rect.Dx() {
+			// XXX
+			panic("subimages are not supported")
+		}
+
+		// XXX we need to premultiply the data
+		return img.Pix
+	case *image.RGBA:
+		// premultiplied
+		if img.Stride != 4*img.Rect.Dx() {
+			// XXX
+			panic("subimages are not supported")
+		}
+		return img.Pix
+	default:
+		// XXX convert to a supported format
+		panic(fmt.Sprintf("unsupported image type %T", img))
+	}
+}
+
 func (eng *Engine) RunRecording(
 	arena *mem.Arena,
 	queue *wgpu.Queue,
@@ -299,8 +325,7 @@ func (eng *Engine) RunRecording(
 			bindMap.insertBuf(arena, bufProxy, buf)
 
 		case *renderer.UploadImage:
-			imageProxy := cmd.Image
-			bytes := cmd.Data
+			imageProxy := cmd.Proxy
 			format := imageFormatToWGPU(imageProxy.Format)
 			blockSize, ok := format.BlockCopySize(wgpu.TextureAspectAll)
 			if !ok {
@@ -334,7 +359,7 @@ func (eng *Engine) RunRecording(
 					Origin:   wgpu.Origin3D{X: 0, Y: 0, Z: 0},
 					Aspect:   wgpu.TextureAspectAll,
 				}),
-				bytes,
+				imageData(cmd.Image),
 				mem.Make(arena, wgpu.TextureDataLayout{
 					Offset: 0,
 					// XXX can we use this to upload subimages?
@@ -350,12 +375,11 @@ func (eng *Engine) RunRecording(
 			bindMap.insertImage(arena, imageProxy.ID, texture, textureView)
 
 		case *renderer.WriteImage:
-			proxy := cmd.Image
+			proxy := cmd.Proxy
 			x := cmd.Coords[0]
 			y := cmd.Coords[1]
 			width := cmd.Coords[2]
 			height := cmd.Coords[3]
-			data := cmd.Data
 			texture, _ := bindMap.getOrCreateImage(arena, proxy, eng.Device)
 			format := imageFormatToWGPU(proxy.Format)
 			blockSize, ok := format.BlockCopySize(wgpu.TextureAspectAll)
@@ -369,7 +393,7 @@ func (eng *Engine) RunRecording(
 					Origin:   wgpu.Origin3D{X: x, Y: y, Z: 0},
 					Aspect:   wgpu.TextureAspectAll,
 				}),
-				data,
+				imageData(cmd.Image),
 				mem.Make(arena, wgpu.TextureDataLayout{
 					Offset:       0,
 					BytesPerRow:  width * blockSize,
