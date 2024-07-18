@@ -52,6 +52,28 @@ func (enc *Encoding) Reset() {
 }
 
 func (enc *Encoding) Append(other *Encoding, transform jmath.Transform) {
+	offsets := enc.StreamOffsets()
+	stopsBase := len(enc.Resources.ColorStops)
+	// XXX glyph stuff
+	for _, patch := range other.Resources.Patches {
+		// XXX glyph stuff
+		switch patch := patch.(type) {
+		case RampPatch:
+			stops := [2]int{
+				patch.Stops[0] + stopsBase,
+				patch.Stops[1] + stopsBase,
+			}
+			enc.Resources.Patches = append(enc.Resources.Patches, RampPatch{
+				DrawDataOffset: patch.DrawDataOffset + offsets.DrawData,
+				Stops:          stops,
+				Extend:         patch.Extend,
+			})
+		default:
+			panic(fmt.Sprintf("unhandled type %T", patch))
+		}
+	}
+	enc.Resources.ColorStops = append(enc.Resources.ColorStops, other.Resources.ColorStops...)
+
 	enc.PathTags = append(enc.PathTags, other.PathTags...)
 	enc.PathData = append(enc.PathData, other.PathData...)
 	enc.DrawTags = append(enc.DrawTags, other.DrawTags...)
