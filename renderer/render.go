@@ -41,7 +41,6 @@ type FullShaders struct {
 type Render struct {
 	fineWgCount   WorkgroupSize
 	fineResources fineResources
-	maskBuf       ResourceProxy
 }
 
 type AaConfig int
@@ -74,8 +73,9 @@ type fineResources struct {
 	outImage ImageProxy
 }
 
-func (r *Render) RenderEncodingCoarse(
+func (rd *Renderer) RenderEncodingCoarse(
 	arena *mem.Arena,
+	r *Render,
 	encoding *encoding.Encoding,
 	resolver *Resolver,
 	shaders *FullShaders,
@@ -114,15 +114,20 @@ func (r *Render) RenderEncodingCoarse(
 	}
 	// XXX handle when there are more images than slots in the array
 	for _, img := range images {
-		proxy := recording.UploadImage(
-			arena,
-			uint32(img.Image.Bounds().Dx()),
-			uint32(img.Image.Bounds().Dy()),
-			// XXX support non-sRGB images
-			Rgba8Srgb,
-			img.Image,
-		)
-		imageProxies = mem.Append(arena, imageProxies, proxy)
+		if proxy, ok := rd.images[img.Image]; ok {
+			imageProxies = mem.Append(arena, imageProxies, proxy)
+		} else {
+			proxy := recording.UploadImage(
+				arena,
+				uint32(img.Image.Bounds().Dx()),
+				uint32(img.Image.Bounds().Dy()),
+				// XXX support non-sRGB images
+				Rgba8Srgb,
+				img.Image,
+			)
+			imageProxies = mem.Append(arena, imageProxies, proxy)
+			rd.images[img.Image] = proxy
+		}
 	}
 
 	cpuConfig := NewRenderConfig(arena, &layout, params.Width, params.Height, params.BaseColor)
@@ -435,7 +440,7 @@ func (r *Render) RenderEncodingCoarse(
 	return recording
 }
 
-func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording Recording, pgroup profiler.ProfilerGroup) Recording {
+func (rd *Renderer) RecordFine(arena *mem.Arena, r *Render, shaders *FullShaders, recording Recording, pgroup profiler.ProfilerGroup) Recording {
 	pgroup = pgroup.Start("RecordFine")
 	defer pgroup.End()
 
@@ -464,7 +469,7 @@ func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording Re
 			}),
 		)
 	default:
-		if r.maskBuf.Kind == 0 {
+		if rd.maskBuf.Kind == 0 {
 			var maskLUT []uint8
 			switch fine.aaConfig {
 			case Msaa16:
@@ -475,7 +480,7 @@ func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording Re
 				panic("unreachable")
 			}
 			buf := recording.Upload(arena, "mask lut", maskLUT)
-			r.maskBuf = buf.Resource()
+			rd.maskBuf = buf.Resource()
 		}
 		var fineShader ShaderID
 		switch fine.aaConfig {
@@ -502,7 +507,7 @@ func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording Re
 					Kind:       ResourceProxyKindImageArray,
 					ImageArray: fine.images,
 				},
-				r.maskBuf,
+				rd.maskBuf,
 			}),
 		)
 	}
@@ -512,16 +517,7 @@ func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording Re
 	recording.FreeResource(arena, fine.segmentsBuf)
 	recording.FreeResource(arena, fine.ptclBuf)
 	recording.FreeResource(arena, fine.gradientImage)
-	for _, proxy := range fine.images {
-		recording.FreeResource(arena, ResourceProxy{Kind: ResourceProxyKindImage, ImageProxy: proxy})
-	}
 	recording.FreeResource(arena, fine.infoBinDataBuf)
-	// TODO: make mask buf persistent
-	if r.maskBuf.Kind != 0 {
-		recording.FreeResource(arena, r.maskBuf)
-		r.maskBuf = ResourceProxy{}
-	}
-
 	return recording
 }
 
@@ -529,7 +525,23 @@ func (r *Render) OutImage() ImageProxy {
 	return r.fineResources.outImage
 }
 
-func RenderFull(
+type Renderer struct {
+	maskBuf ResourceProxy
+
+	// OPT(dh): there is currently no way to delete images. We should a) track
+	// when an image was last used b) total VRAM usage and garbage collect
+	// images. Once Go supports weak pointers, we'll also want to delete images
+	// that were garbage collected.
+	images map[image.Image]ImageProxy
+}
+
+func New() *Renderer {
+	return &Renderer{
+		images: make(map[image.Image]ImageProxy),
+	}
+}
+
+func (rd *Renderer) RenderFull(
 	arena *mem.Arena,
 	enc *encoding.Encoding,
 	resolver *Resolver,
@@ -541,8 +553,8 @@ func RenderFull(
 	defer pgroup.End()
 
 	var render Render
-	recording := render.RenderEncodingCoarse(arena, enc, resolver, shaders, params, false, pgroup)
+	recording := rd.RenderEncodingCoarse(arena, &render, enc, resolver, shaders, params, false, pgroup)
 	outImage := render.OutImage()
-	recording = render.RecordFine(arena, shaders, recording, pgroup)
+	recording = rd.RecordFine(arena, &render, shaders, recording, pgroup)
 	return recording, outImage.Resource()
 }

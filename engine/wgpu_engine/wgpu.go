@@ -23,12 +23,14 @@ type uninitializedShader struct {
 
 type Engine struct {
 	Device              *wgpu.Device
+	renderer            *renderer.Renderer
 	shaders             []shader
 	pool                resourcePool
 	downloads           map[renderer.ResourceID]*wgpu.Buffer
 	shadersToInitialize []uninitializedShader
 	UseCPU              bool
 
+	resident    persistentBindMap
 	resolver    *renderer.Resolver
 	blit        *blitPipeline
 	fullShaders *renderer.FullShaders
@@ -88,9 +90,15 @@ type materializedBuffer struct {
 	buffer *wgpu.Buffer
 }
 
+type persistentBindMap struct {
+	bufMap   map[renderer.ResourceID]bindMapBuffer
+	imageMap map[renderer.ResourceID]bindMapImage
+}
+
 type bindMapBuffer struct {
-	Buffer materializedBuffer
-	Label  string
+	Buffer    materializedBuffer
+	Label     string
+	permanent bool
 }
 
 type bindMapImage struct {
@@ -99,8 +107,8 @@ type bindMapImage struct {
 }
 
 type bindMap struct {
-	bufMap        mem.BinaryTreeMap[renderer.ResourceID, *bindMapBuffer]
-	imageMap      mem.BinaryTreeMap[renderer.ResourceID, *bindMapImage]
+	bufMap        mem.BinaryTreeMap[renderer.ResourceID, bindMapBuffer]
+	imageMap      mem.BinaryTreeMap[renderer.ResourceID, bindMapImage]
 	pendingClears mem.BinaryTreeMap[renderer.ResourceID, struct{}]
 }
 
@@ -133,7 +141,8 @@ type transientBuf struct {
 
 func New(dev *wgpu.Device, options *RendererOptions) *Engine {
 	eng := &Engine{
-		Device: dev,
+		Device:   dev,
+		renderer: renderer.New(),
 		pool: resourcePool{
 			bufs: make(map[bufferProperties][]*wgpu.Buffer),
 		},
@@ -141,6 +150,10 @@ func New(dev *wgpu.Device, options *RendererOptions) *Engine {
 		UseCPU:    options.UseCPU,
 
 		resolver: renderer.NewResolver(),
+		resident: persistentBindMap{
+			bufMap:   make(map[renderer.ResourceID]bindMapBuffer),
+			imageMap: make(map[renderer.ResourceID]bindMapImage),
+		},
 	}
 	eng.fullShaders = eng.prepareShaders()
 	eng.buildShaders()
@@ -301,6 +314,13 @@ func (eng *Engine) RunRecording(
 	// be cheaper to first track buffers locally, then remember only those
 	// buffers that weren't freed by the end of the frame.
 	bindMap := bindMap{}
+
+	for k, v := range eng.resident.bufMap {
+		bindMap.bufMap.Insert(arena, k, v)
+	}
+	for k, v := range eng.resident.imageMap {
+		bindMap.imageMap.Insert(arena, k, v)
+	}
 
 	encoder := eng.Device.CreateCommandEncoder(mem.Make(arena, wgpu.CommandEncoderDescriptor{Label: label}))
 
@@ -542,6 +562,7 @@ func (eng *Engine) RunRecording(
 		buf, ok := bindMap.bufMap.Get(id)
 		if ok {
 			bindMap.bufMap.Delete(id)
+			delete(eng.resident.bufMap, id)
 			if buf.Buffer.kind == materializedBufferKindBuffer {
 				gpuBuf := buf.Buffer.buffer
 				props := bufferProperties{
@@ -557,10 +578,25 @@ func (eng *Engine) RunRecording(
 		tex, ok := bindMap.imageMap.Get(id)
 		if ok {
 			bindMap.imageMap.Delete(id)
+			delete(eng.resident.imageMap, id)
 			// TODO: have a pool to avoid needless re-allocation
 			tex.texture.Release()
 			tex.view.Release()
 		}
+	}
+
+	// TODO(dh): should we make persistence explicit, e.g. as a new command, or
+	// a flag on resources? and if we do, should we complain about resources
+	// that aren't persistent but weren't freed?
+	for k, v := range bindMap.bufMap.All() {
+		if v.permanent {
+			continue
+		}
+		v.permanent = true
+		eng.resident.bufMap[k] = v
+	}
+	for k, v := range bindMap.imageMap.All() {
+		eng.resident.imageMap[k] = v
 	}
 }
 
@@ -607,10 +643,10 @@ func (eng *Engine) createComputePipeline(
 }
 
 func (m *bindMap) insertBuf(arena *mem.Arena, proxy renderer.BufferProxy, buffer *wgpu.Buffer) {
-	m.bufMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapBuffer{
+	m.bufMap.Insert(arena, proxy.ID, bindMapBuffer{
 		Buffer: materializedBuffer{kind: materializedBufferKindBuffer, buffer: buffer},
 		Label:  proxy.Name,
-	}))
+	})
 }
 
 func (m *bindMap) getGPUBuf(id renderer.ResourceID) (*wgpu.Buffer, bool) {
@@ -636,18 +672,18 @@ func (m *bindMap) getCPUBuf(id renderer.ResourceID) cpuBinding {
 func (m *bindMap) materializeCPUBuf(arena *mem.Arena, proxy renderer.BufferProxy) {
 	if _, ok := m.bufMap.Get(proxy.ID); !ok {
 		buffer := make([]byte, proxy.Size)
-		m.bufMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapBuffer{
+		m.bufMap.Insert(arena, proxy.ID, bindMapBuffer{
 			Buffer: materializedBuffer{kind: materializedBufferKindBytes, bytes: buffer},
 			Label:  proxy.Name,
-		}))
+		})
 	}
 }
 
 func (m *bindMap) insertImage(arena *mem.Arena, id renderer.ResourceID, image *wgpu.Texture, imageView *wgpu.TextureView) {
-	m.imageMap.Insert(arena, id, mem.Make(arena, bindMapImage{image, imageView}))
+	m.imageMap.Insert(arena, id, bindMapImage{image, imageView})
 }
 
-func (m *bindMap) getBuf(proxy renderer.BufferProxy) (*bindMapBuffer, bool) {
+func (m *bindMap) getBuf(proxy renderer.BufferProxy) (bindMapBuffer, bool) {
 	b, ok := m.bufMap.Get(proxy.ID)
 	return b, ok
 }
@@ -683,9 +719,9 @@ func (m *bindMap) getOrCreateImage(
 		ArrayLayerCount: ^uint32(0),
 		Format:          imageFormatToWGPU(proxy.Format),
 	})
-	m.imageMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapImage{
+	m.imageMap.Insert(arena, proxy.ID, bindMapImage{
 		texture, textureView,
-	}))
+	})
 
 	return texture, textureView
 }
@@ -819,9 +855,9 @@ func (m *transientBindMap) createBindGroup(
 			ArrayLayerCount: ^uint32(0),
 			Format:          imageFormatToWGPU(proxy.Format),
 		})
-		bindMap.imageMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapImage{
+		bindMap.imageMap.Insert(arena, proxy.ID, bindMapImage{
 			texture, textureView,
-		}))
+		})
 	}
 
 	for _, proxy := range bindings {
@@ -843,10 +879,10 @@ func (m *transientBindMap) createBindGroup(
 					bindMap.pendingClears.Delete(proxy.BufferProxy.ID)
 					encoder.ClearBuffer(buf, 0, buf.Size())
 				}
-				bindMap.bufMap.Insert(arena, proxy.BufferProxy.ID, mem.Make(arena, bindMapBuffer{
+				bindMap.bufMap.Insert(arena, proxy.BufferProxy.ID, bindMapBuffer{
 					Buffer: materializedBuffer{kind: materializedBufferKindBuffer, buffer: buf},
 					Label:  proxy.Name,
-				}))
+				})
 			}
 		case renderer.ResourceProxyKindImage:
 			doImage(proxy.ImageProxy)
@@ -872,7 +908,7 @@ func (m *transientBindMap) createBindGroup(
 				var ok bool
 				buf, ok = bindMap.getGPUBuf(proxy.BufferProxy.ID)
 				if !ok {
-					panic("unexpected ok == false")
+					panic(fmt.Sprintf("unexpected ok == false for %s(%d)", proxy.Name, proxy.BufferProxy.ID))
 				}
 			}
 			entries[i] = wgpu.BindGroupEntry{

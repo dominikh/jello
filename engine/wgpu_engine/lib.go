@@ -203,7 +203,7 @@ func (eng *Engine) RenderToTexture(
 	pgroup = pgroup.Nest("RenderToTexture")
 	defer pgroup.End()
 
-	recording, target := renderer.RenderFull(arena, enc, eng.resolver, eng.fullShaders, params, pgroup)
+	recording, target := eng.renderer.RenderFull(arena, enc, eng.resolver, eng.fullShaders, params, pgroup)
 
 	externalResources := []ExternalResource{
 		ExternalImage{
