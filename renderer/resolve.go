@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"encoding/binary"
+	"fmt"
 	"unsafe"
 
 	"honnef.co/go/jello/encoding"
@@ -28,14 +29,16 @@ type ResolvedPatchKind int
 
 const (
 	ResolvedPatchKindRamp ResolvedPatchKind = iota + 1
+	ResolvedPatchKindImage
 )
 
 type ResolvedPatch struct {
-	Kind ResolvedPatchKind
-	Ramp ResolvedPatchRamp
+	Kind  ResolvedPatchKind
+	Ramp  ResolvedPatchRamp
+	Image ResolvedPatchImage
 }
 
-// XXX support glyphs and images
+// XXX support glyphs
 
 type ResolvedPatchRamp struct {
 	DrawDataOffset int
@@ -43,18 +46,24 @@ type ResolvedPatchRamp struct {
 	Extend         gfx.Extend
 }
 
-func (r *Resolver) Resolve(arena *mem.Arena, enc *encoding.Encoding) (Layout, Ramps, Images, []byte) {
+type ResolvedPatchImage struct {
+	// index of image in array
+	Index uint32
+	Image gfx.Image
+	// offset to the index in the draw data stream
+	DrawDataOffset int
+}
+
+func (r *Resolver) Resolve(arena *mem.Arena, enc *encoding.Encoding) (Layout, Ramps, []gfx.Image, []byte) {
 	resources := enc.Resources
 	if len(resources.Patches) == 0 {
 		layout, packed := resolveSolidPathsOnly(arena, enc)
-		return layout, Ramps{}, Images{}, packed
+		return layout, Ramps{}, nil, packed
 	}
 	// TODO(dh): check if we can deduplicate code between this function and resolveSolidPathsOnly
 
 	var data []byte
-	patchSizes := r.resolvePatches(enc)
-	// XXX support images
-	// r.resolvePendingImages()
+	patchSizes, imgs := r.resolvePatches(enc)
 	layout := Layout{
 		NumPaths: enc.NumPaths,
 		NumClips: enc.NumClips,
@@ -104,12 +113,13 @@ func (r *Resolver) Resolve(arena *mem.Arena, enc *encoding.Encoding) (Layout, Ra
 		}
 	}
 	{
-		// Draw data stream
+		// Draw data stream. This code replaces parts of the existing data
+		// stream (enc.DrawData) with information computed during resolving.
 		layout.DrawDataBase = sizeToWords(len(data))
 		pos := 0
 		stream := enc.DrawData
 		for _, patch := range r.patches {
-			// XXX support glyphs and images
+			// XXX support glyphs
 			switch patch.Kind {
 			case ResolvedPatchKindRamp:
 				if pos < patch.Ramp.DrawDataOffset {
@@ -119,6 +129,15 @@ func (r *Resolver) Resolve(arena *mem.Arena, enc *encoding.Encoding) (Layout, Ra
 				data = mem.Grow(arena, data, 4)
 				data = binary.LittleEndian.AppendUint32(data, indexMode)
 				pos = patch.Ramp.DrawDataOffset + 4
+			case ResolvedPatchKindImage:
+				if pos < patch.Image.DrawDataOffset {
+					data = mem.Append(arena, data, enc.DrawData[pos:patch.Image.DrawDataOffset]...)
+				}
+				data = mem.Grow(arena, data, 4)
+				data = binary.LittleEndian.AppendUint32(data, patch.Image.Index)
+				pos = patch.Image.DrawDataOffset + 4
+			default:
+				panic(fmt.Sprintf("unhandled kind %d", patch.Kind))
 			}
 		}
 		if pos < len(stream) {
@@ -150,22 +169,21 @@ func (r *Resolver) Resolve(arena *mem.Arena, enc *encoding.Encoding) (Layout, Ra
 	if sbs.bufferSize != len(data) {
 		panic("internal error: buffer size mismatch")
 	}
-	// XXX support images
-	return layout, r.rampCache.ramps(), Images{}, data
+	return layout, r.rampCache.ramps(), imgs, data
 }
 
-func (r *Resolver) resolvePatches(enc *encoding.Encoding) encoding.StreamOffsets {
+func (r *Resolver) resolvePatches(enc *encoding.Encoding) (encoding.StreamOffsets, []gfx.Image) {
 	r.rampCache.maintain()
 	// XXX glyph stuff
-	// XXX image stuff
-	// OPT(dh): make sure we actually need to clear r.patches; does it store pointers?
 	clear(r.patches)
 	r.patches = r.patches[:0]
 	var sizes encoding.StreamOffsets
 	resources := enc.Resources
+
+	var imgs []gfx.Image
+	var imgIdx uint32
 	for _, patch := range resources.Patches {
 		// XXX glyph stuff
-		// XXX image stuff
 		switch patch := patch.(type) {
 		case encoding.RampPatch:
 			rampID := r.rampCache.add(resources.ColorStops[patch.Stops[0]:patch.Stops[1]])
@@ -177,9 +195,22 @@ func (r *Resolver) resolvePatches(enc *encoding.Encoding) encoding.StreamOffsets
 					Extend:         patch.Extend,
 				},
 			})
+		case encoding.ImagePatch:
+			r.patches = append(r.patches, ResolvedPatch{
+				Kind: ResolvedPatchKindImage,
+				Image: ResolvedPatchImage{
+					Index:          imgIdx,
+					Image:          patch.Image,
+					DrawDataOffset: patch.DrawDataOffset + sizes.DrawData,
+				},
+			})
+			imgs = append(imgs, patch.Image)
+			imgIdx++
+		default:
+			panic(fmt.Sprintf("unhandled type %T", patch))
 		}
 	}
-	return sizes
+	return sizes, imgs
 }
 
 func resolveSolidPathsOnly(arena *mem.Arena, enc *encoding.Encoding) (Layout, []byte) {

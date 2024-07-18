@@ -516,7 +516,7 @@ struct CmdSweepGrad {
 struct CmdImage {
     matrx: vec4<f32>,
     xlat: vec2<f32>,
-    atlas_offset: vec2<f32>,
+	index: u32,
     extents: vec2<f32>,
 }
 
@@ -541,7 +541,7 @@ var output: texture_storage_2d<rgba8unorm, write>;
 var gradients: texture_2d<f32>;
 
 @group(0) @binding(6)
-var image_atlas: texture_2d<f32>;
+var images: binding_array<texture_2d<f32>, 2048>;
 
 // MSAA-only bindings and utilities
 
@@ -1181,14 +1181,12 @@ fn read_image(cmd_ix: u32) -> CmdImage {
     let m3 = bitcast<f32>(info[info_offset + 3u]);
     let matrx = vec4(m0, m1, m2, m3);
     let xlat = vec2(bitcast<f32>(info[info_offset + 4u]), bitcast<f32>(info[info_offset + 5u]));
-    let xy = info[info_offset + 6u];
+
+    let index = info[info_offset + 6u];
     let width_height = info[info_offset + 7u];
-    // The following are not intended to be bitcasts
-    let x = f32(xy >> 16u);
-    let y = f32(xy & 0xffffu);
     let width = f32(width_height >> 16u);
     let height = f32(width_height & 0xffffu);
-    return CmdImage(matrx, xlat, vec2(x, y), vec2(width, height));
+    return CmdImage(matrx, xlat, index, vec2(width, height));
 }
 
 fn read_end_clip(cmd_ix: u32) -> CmdEndClip {
@@ -1398,21 +1396,20 @@ fn main(
             }
             case CMD_IMAGE: {
                 let image = read_image(cmd_ix);
-                let atlas_extents = image.atlas_offset + image.extents;
                 for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
                     let my_xy = vec2(xy.x + f32(i), xy.y);
-                    let atlas_uv = image.matrx.xy * my_xy.x + image.matrx.zw * my_xy.y + image.xlat + image.atlas_offset;
+                    let uv = image.matrx.xy * my_xy.x + image.matrx.zw * my_xy.y + image.xlat;
                     // This currently clips to the image bounds. TODO: extend modes
-                    if all(atlas_uv < atlas_extents) && area[i] != 0.0 {
-                        let uv_quad = vec4(max(floor(atlas_uv), image.atlas_offset), min(ceil(atlas_uv), atlas_extents));
-                        let uv_frac = fract(atlas_uv);
-                        let a = premul_alpha(textureLoad(image_atlas, vec2<i32>(uv_quad.xy), 0));
-                        let b = premul_alpha(textureLoad(image_atlas, vec2<i32>(uv_quad.xw), 0));
-                        let c = premul_alpha(textureLoad(image_atlas, vec2<i32>(uv_quad.zy), 0));
-                        let d = premul_alpha(textureLoad(image_atlas, vec2<i32>(uv_quad.zw), 0));
-                        let fg_rgba = mix(mix(a, b, uv_frac.y), mix(c, d, uv_frac.y), uv_frac.x);
-                        let fg_i = fg_rgba * area[i];
-                        rgba[i] = rgba[i] * (1.0 - fg_i.a) + fg_i;
+                    if all(uv < image.extents) && area[i] != 0.0 {
+                       let uv_quad = vec4(floor(uv), ceil(uv));
+                       let uv_frac = fract(uv);
+                       let a = premul_alpha(textureLoad(images[image.index], vec2<i32>(uv_quad.xy), 0));
+                       let b = premul_alpha(textureLoad(images[image.index], vec2<i32>(uv_quad.xw), 0));
+                       let c = premul_alpha(textureLoad(images[image.index], vec2<i32>(uv_quad.zy), 0));
+                       let d = premul_alpha(textureLoad(images[image.index], vec2<i32>(uv_quad.zw), 0));
+                       let fg_rgba = mix(mix(a, b, uv_frac.y), mix(c, d, uv_frac.y), uv_frac.x);
+                       let fg_i = fg_rgba * area[i];
+                       rgba[i] = rgba[i] * (1.0 - fg_i.a) + fg_i;
                     }
                 }
                 cmd_ix += 2u;

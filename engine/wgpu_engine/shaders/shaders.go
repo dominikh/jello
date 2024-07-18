@@ -8,6 +8,7 @@ const (
 	Uniform
 	Image
 	ImageRead
+	ImageArrayRead
 )
 
 func (typ BindType) IsMutable() bool {

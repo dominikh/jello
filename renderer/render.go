@@ -1,6 +1,9 @@
 package renderer
 
 import (
+	"fmt"
+	"image"
+
 	"honnef.co/go/jello/encoding"
 	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/mem"
@@ -67,7 +70,7 @@ type fineResources struct {
 	ptclBuf        ResourceProxy
 	gradientImage  ResourceProxy
 	infoBinDataBuf ResourceProxy
-	imageAtlas     ResourceProxy
+	images         []ImageProxy
 
 	outImage ImageProxy
 }
@@ -99,13 +102,48 @@ func (r *Render) RenderEncodingCoarse(
 			data,
 		)
 	}
-	var imageAtlas ImageProxy
-	if len(images.Images) == 0 {
-		imageAtlas = NewImageProxy(1, 1, Rgba8)
-	} else {
-		panic("images not implemented")
+
+	var imageProxies []ImageProxy
+	if len(images) == 0 {
+		// We need at least one entry for the array of textures or the binding
+		// will be invalid.
+		imageProxies = mem.Append(arena, imageProxies, NewImageProxy(1, 1, Rgba8))
 	}
-	// XXX write images to atlas
+	// XXX handle when there are more images than slots in the array
+	for _, img := range images {
+		var data []byte
+		switch img := img.Image.(type) {
+		case *image.NRGBA:
+			// not premultiplied
+
+			// XXX we need to premultiply the data
+			data = img.Pix
+
+			if img.Stride != 4*img.Rect.Dx() {
+				// XXX
+				panic("subimages are not supported")
+			}
+		case *image.RGBA:
+			// premultiplied
+			data = img.Pix
+			if img.Stride != 4*img.Rect.Dx() {
+				// XXX
+				panic("subimages are not supported")
+			}
+		default:
+			// XXX convert to a supported format
+			panic(fmt.Sprintf("unsupported image type %T", img))
+		}
+		proxy := recording.UploadImage(
+			arena,
+			uint32(img.Image.Bounds().Dx()),
+			uint32(img.Image.Bounds().Dy()),
+			// XXX support non-sRGB images
+			Rgba8Srgb,
+			data,
+		)
+		imageProxies = mem.Append(arena, imageProxies, proxy)
+	}
 
 	cpuConfig := NewRenderConfig(arena, &layout, params.Width, params.Height, params.BaseColor)
 	bufferSizes := &cpuConfig.bufferSizes
@@ -407,7 +445,7 @@ func (r *Render) RenderEncodingCoarse(
 		ptclBuf:        ptclBuf.Resource(),
 		gradientImage:  gradientImage.Resource(),
 		infoBinDataBuf: infoBinDataBuf.Resource(),
-		imageAtlas:     imageAtlas.Resource(),
+		images:         imageProxies,
 		outImage:       outImage,
 	}
 	if robust {
@@ -436,7 +474,13 @@ func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording Re
 				fine.infoBinDataBuf,
 				fine.outImage.Resource(),
 				fine.gradientImage,
-				fine.imageAtlas,
+				{
+					Kind: ResourceProxyKindImageArray,
+					// TODO(dh): our use of partially bound descriptors is
+					// currently only supported on Vulkan. See
+					// https://github.com/gfx-rs/wgpu/issues/3637.
+					ImageArray: fine.images,
+				},
 			}),
 		)
 	default:
@@ -474,7 +518,10 @@ func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording Re
 				fine.infoBinDataBuf,
 				fine.outImage.Resource(),
 				fine.gradientImage,
-				fine.imageAtlas,
+				{
+					Kind:       ResourceProxyKindImageArray,
+					ImageArray: fine.images,
+				},
 				r.maskBuf,
 			}),
 		)
@@ -485,7 +532,9 @@ func (r *Render) RecordFine(arena *mem.Arena, shaders *FullShaders, recording Re
 	recording.FreeResource(arena, fine.segmentsBuf)
 	recording.FreeResource(arena, fine.ptclBuf)
 	recording.FreeResource(arena, fine.gradientImage)
-	recording.FreeResource(arena, fine.imageAtlas)
+	for _, proxy := range fine.images {
+		recording.FreeResource(arena, ResourceProxy{Kind: ResourceProxyKindImage, ImageProxy: proxy})
+	}
 	recording.FreeResource(arena, fine.infoBinDataBuf)
 	// TODO: make mask buf persistent
 	if r.maskBuf.Kind != 0 {

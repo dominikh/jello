@@ -20,12 +20,14 @@ type ResourceProxyKind int
 const (
 	ResourceProxyKindBuffer ResourceProxyKind = iota + 1
 	ResourceProxyKindImage
+	ResourceProxyKindImageArray
 )
 
 type ResourceProxy struct {
 	Kind ResourceProxyKind
 	BufferProxy
 	ImageProxy
+	ImageArray []ImageProxy
 }
 
 type Recording struct {
@@ -127,6 +129,7 @@ type ImageFormat int
 
 const (
 	Rgba8 ImageFormat = iota
+	Rgba8Srgb
 	Bgra8
 )
 
@@ -169,6 +172,7 @@ const (
 	BindTypeUniform
 	BindTypeImage
 	BindTypeImageRead
+	BindTypeImageArrayRead
 )
 
 type BindType struct {

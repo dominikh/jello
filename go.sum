@@ -6,8 +6,8 @@ honnef.co/go/curve v0.0.0-20240713195357-1e39b7d8d78a h1:0jPLlqFRYFW+eZT5V4ibhDl
 honnef.co/go/curve v0.0.0-20240713195357-1e39b7d8d78a/go.mod h1:qoI+1aKyxvS7Ni/ZX2NKQe2S6PfL08gR3hTHK3/E+io=
 honnef.co/go/safeish v0.0.0-20240708173349-a249fc03b5f3 h1:caxtAU8OLU3+NmFCYWgNqxB/FnvcZIoWy8uQGWuOHWU=
 honnef.co/go/safeish v0.0.0-20240708173349-a249fc03b5f3/go.mod h1:6TmSwH8eepkcwN0dPPAkTpxwjEJzgJq5Bv2HD3HHAP8=
-honnef.co/go/wgpu v0.0.0-20240716153913-535527a35c9d h1:stOq1nKqHF+GJAk2JBqH3W8VNfRtlAI3K38dRtzWI38=
-honnef.co/go/wgpu v0.0.0-20240716153913-535527a35c9d/go.mod h1:XKVG0li9b/cGpbg568Jgea2Gas+NOb2uk+vXk4kexmA=
+honnef.co/go/wgpu v0.0.0-20240719115612-5d243632325b h1:fdMCZlMAjGRIb+1lZM0vUKCs5GO9LVtyS3FUbRVxSyo=
+honnef.co/go/wgpu v0.0.0-20240719115612-5d243632325b/go.mod h1:XKVG0li9b/cGpbg568Jgea2Gas+NOb2uk+vXk4kexmA=
 honnef.co/go/wgpu-darwin-amd64 v0.1904.1 h1:0oc+U7HdfoaRKry8vSBzkkpzP1LNq2iDNKdBqM5e98c=
 honnef.co/go/wgpu-darwin-amd64 v0.1904.1/go.mod h1:Nly+iq38riYqpOFa7HDHOzDjJzqf1AzwtcSDmaGOaN0=
 honnef.co/go/wgpu-darwin-arm64 v0.1904.1 h1:XIfknJtAHC1ldDilaDgTgVLuvovabVXTOaV5L1imNSA=

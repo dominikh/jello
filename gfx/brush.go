@@ -12,7 +12,9 @@ type GradientBrush struct {
 	Gradient Gradient
 }
 
-type ImageBrush struct{}
+type ImageBrush struct {
+	Image Image
+}
 
 func (SolidBrush) isBrush()    {}
 func (GradientBrush) isBrush() {}

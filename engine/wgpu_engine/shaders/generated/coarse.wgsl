@@ -235,7 +235,7 @@ struct CmdSweepGrad {
 struct CmdImage {
     matrx: vec4<f32>,
     xlat: vec2<f32>,
-    atlas_offset: vec2<f32>,
+	index: u32,
     extents: vec2<f32>,
 }
 

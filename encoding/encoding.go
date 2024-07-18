@@ -68,6 +68,11 @@ func (enc *Encoding) Append(other *Encoding, transform jmath.Transform) {
 				Stops:          stops,
 				Extend:         patch.Extend,
 			})
+		case ImagePatch:
+			enc.Resources.Patches = append(enc.Resources.Patches, ImagePatch{
+				Image:          patch.Image,
+				DrawDataOffset: patch.DrawDataOffset + offsets.DrawData,
+			})
 		default:
 			panic(fmt.Sprintf("unhandled type %T", patch))
 		}
@@ -201,7 +206,9 @@ func (enc *Encoding) EncodeBrush(b gfx.Brush, alpha float32) {
 			panic(fmt.Sprintf("unsupported gradient %T", g))
 		}
 	case gfx.ImageBrush:
-		panic("unsupported")
+		enc.EncodeImage(b.Image, 1)
+	default:
+		panic(fmt.Sprintf("unhandled type %T", b))
 	}
 }
 
@@ -300,7 +307,18 @@ func (enc *Encoding) EncodeSweepGradient(
 	}
 }
 
-// XXX EncodeImage
+func (enc *Encoding) EncodeImage(img gfx.Image, alpha float32) {
+	enc.Resources.Patches = append(enc.Resources.Patches, ImagePatch{
+		Image:          img,
+		DrawDataOffset: len(enc.DrawData),
+	})
+	enc.DrawTags = append(enc.DrawTags, DrawTagImage)
+	b := img.Image.Bounds().Canon()
+	drawImg := drawImage{
+		widthHeight: uint32(b.Dx()<<16 | b.Dy()&0xFFFF),
+	}
+	enc.DrawData = append(enc.DrawData, safeish.AsBytes(&drawImg)...)
+}
 
 func (enc *Encoding) EncodeBeginClip(blendMode gfx.BlendMode, alpha float32) {
 	enc.DrawTags = append(enc.DrawTags, DrawTagBeginClip)
@@ -380,3 +398,10 @@ type RampPatch struct {
 }
 
 func (RampPatch) isPatch() {}
+
+type ImagePatch struct {
+	DrawDataOffset int
+	Image          gfx.Image
+}
+
+func (ImagePatch) isPatch() {}

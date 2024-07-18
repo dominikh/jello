@@ -247,7 +247,7 @@ var Collection = Shaders{
 			BufReadOnly,
 			Image,
 			ImageRead,
-			ImageRead,
+			ImageArrayRead,
 		},
 		WorkgroupBuffers: nil,
 		WGSL: WGSLSource{
@@ -265,7 +265,7 @@ var Collection = Shaders{
 			BufReadOnly,
 			Image,
 			ImageRead,
-			ImageRead,
+			ImageArrayRead,
 		},
 		WorkgroupBuffers: nil,
 		WGSL: WGSLSource{
@@ -283,7 +283,7 @@ var Collection = Shaders{
 			BufReadOnly,
 			Image,
 			ImageRead,
-			ImageRead,
+			ImageArrayRead,
 			BufReadOnly,
 		},
 		WorkgroupBuffers: []WorkgroupBufferInfo{
@@ -308,7 +308,7 @@ var Collection = Shaders{
 			BufReadOnly,
 			Image,
 			ImageRead,
-			ImageRead,
+			ImageArrayRead,
 			BufReadOnly,
 		},
 		WorkgroupBuffers: []WorkgroupBufferInfo{
@@ -333,7 +333,7 @@ var Collection = Shaders{
 			BufReadOnly,
 			Image,
 			ImageRead,
-			ImageRead,
+			ImageArrayRead,
 			BufReadOnly,
 		},
 		WorkgroupBuffers: []WorkgroupBufferInfo{
@@ -358,7 +358,7 @@ var Collection = Shaders{
 			BufReadOnly,
 			Image,
 			ImageRead,
-			ImageRead,
+			ImageArrayRead,
 			BufReadOnly,
 		},
 		WorkgroupBuffers: []WorkgroupBufferInfo{

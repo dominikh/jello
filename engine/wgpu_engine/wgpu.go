@@ -227,6 +227,18 @@ func (eng *Engine) prepareShader(
 				},
 			}
 
+		case renderer.BindTypeImageArrayRead:
+			entries[i] = wgpu.BindGroupLayoutEntry{
+				Binding:    uint32(i),
+				Visibility: wgpu.ShaderStageCompute,
+				Texture: &wgpu.TextureBindingLayout{
+					SampleType:    wgpu.TextureSampleTypeFloat,
+					ViewDimension: wgpu.TextureViewDimension2D,
+					Multisampled:  false,
+				},
+				Count: 2048,
+			}
+
 		default:
 			panic(fmt.Sprintf("invalid bind type %d", bindType.Type))
 		}
@@ -324,7 +336,8 @@ func (eng *Engine) RunRecording(
 				}),
 				bytes,
 				mem.Make(arena, wgpu.TextureDataLayout{
-					Offset:       0,
+					Offset: 0,
+					// XXX can we use this to upload subimages?
 					BytesPerRow:  imageProxy.Width * blockSize,
 					RowsPerImage: ^uint32(0),
 				}),
@@ -752,6 +765,41 @@ func (m *transientBindMap) createBindGroup(
 	layout *wgpu.BindGroupLayout,
 	bindings []renderer.ResourceProxy,
 ) *wgpu.BindGroup {
+
+	doImage := func(proxy renderer.ImageProxy) {
+		if _, ok := m.images.Get(proxy.ID); ok {
+			return
+		}
+		if _, ok := bindMap.imageMap.Get(proxy.ID); ok {
+			return
+		}
+		format := imageFormatToWGPU(proxy.Format)
+		texture := dev.CreateTexture(&wgpu.TextureDescriptor{
+			Size: wgpu.Extent3D{
+				Width:              proxy.Width,
+				Height:             proxy.Height,
+				DepthOrArrayLayers: 1,
+			},
+			MipLevelCount: 1,
+			SampleCount:   1,
+			Dimension:     wgpu.TextureDimension2D,
+			Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+			Format:        format,
+		})
+		textureView := texture.CreateView(&wgpu.TextureViewDescriptor{
+			Dimension:       wgpu.TextureViewDimension2D,
+			Aspect:          wgpu.TextureAspectAll,
+			MipLevelCount:   ^uint32(0),
+			BaseMipLevel:    0,
+			BaseArrayLayer:  0,
+			ArrayLayerCount: ^uint32(0),
+			Format:          imageFormatToWGPU(proxy.Format),
+		})
+		bindMap.imageMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapImage{
+			texture, textureView,
+		}))
+	}
+
 	for _, proxy := range bindings {
 		switch proxy.Kind {
 		case renderer.ResourceProxyKindBuffer:
@@ -777,37 +825,11 @@ func (m *transientBindMap) createBindGroup(
 				}))
 			}
 		case renderer.ResourceProxyKindImage:
-			if _, ok := m.images.Get(proxy.ImageProxy.ID); ok {
-				continue
+			doImage(proxy.ImageProxy)
+		case renderer.ResourceProxyKindImageArray:
+			for _, proxy := range proxy.ImageArray {
+				doImage(proxy)
 			}
-			if _, ok := bindMap.imageMap.Get(proxy.ImageProxy.ID); ok {
-				continue
-			}
-			format := imageFormatToWGPU(proxy.Format)
-			texture := dev.CreateTexture(&wgpu.TextureDescriptor{
-				Size: wgpu.Extent3D{
-					Width:              proxy.Width,
-					Height:             proxy.Height,
-					DepthOrArrayLayers: 1,
-				},
-				MipLevelCount: 1,
-				SampleCount:   1,
-				Dimension:     wgpu.TextureDimension2D,
-				Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
-				Format:        format,
-			})
-			textureView := texture.CreateView(&wgpu.TextureViewDescriptor{
-				Dimension:       wgpu.TextureViewDimension2D,
-				Aspect:          wgpu.TextureAspectAll,
-				MipLevelCount:   ^uint32(0),
-				BaseMipLevel:    0,
-				BaseArrayLayer:  0,
-				ArrayLayerCount: ^uint32(0),
-				Format:          imageFormatToWGPU(proxy.Format),
-			})
-			bindMap.imageMap.Insert(arena, proxy.ImageProxy.ID, mem.Make(arena, bindMapImage{
-				texture, textureView,
-			}))
 		default:
 			panic(fmt.Sprintf("unhandled type %d", proxy.Kind))
 		}
@@ -848,8 +870,27 @@ func (m *transientBindMap) createBindGroup(
 				TextureView: view,
 				Size:        ^uint64(0),
 			}
+		case renderer.ResourceProxyKindImageArray:
+			n := len(proxy.ImageArray)
+			views := mem.NewSlice[[]*wgpu.TextureView](arena, n, n)
+			for j, imgProxy := range proxy.ImageArray {
+				view, ok := m.images.Get(imgProxy.ID)
+				if !ok {
+					img, ok := bindMap.imageMap.Get(imgProxy.ID)
+					if !ok {
+						panic("unexpected ok == false")
+					}
+					view = img.view
+				}
+				views[j] = view
+			}
+			entries[i] = wgpu.BindGroupEntry{
+				Binding:      uint32(i),
+				Size:         ^uint64(0),
+				TextureViews: views,
+			}
 		default:
-			panic(fmt.Sprintf("unhandled type %T", proxy))
+			panic(fmt.Sprintf("unhandled type %d", proxy.Kind))
 		}
 	}
 

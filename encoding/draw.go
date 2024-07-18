@@ -74,3 +74,10 @@ type drawSweepGradient struct {
 	T0    float32
 	T1    float32
 }
+
+type drawImage struct {
+	_ structs.HostLayout
+
+	index uint32
+	widthHeight uint32
+}

@@ -25,11 +25,12 @@ type RendererOptions struct {
 }
 
 var bindTypeMapping = [...]renderer.BindType{
-	shaders.Buffer:      {Type: renderer.BindTypeBuffer},
-	shaders.BufReadOnly: {Type: renderer.BindTypeBufReadOnly},
-	shaders.Uniform:     {Type: renderer.BindTypeUniform},
-	shaders.Image:       {Type: renderer.BindTypeImage, ImageFormat: renderer.Rgba8},
-	shaders.ImageRead:   {Type: renderer.BindTypeImageRead, ImageFormat: renderer.Rgba8},
+	shaders.Buffer:         {Type: renderer.BindTypeBuffer},
+	shaders.BufReadOnly:    {Type: renderer.BindTypeBufReadOnly},
+	shaders.Uniform:        {Type: renderer.BindTypeUniform},
+	shaders.Image:          {Type: renderer.BindTypeImage, ImageFormat: renderer.Rgba8},
+	shaders.ImageRead:      {Type: renderer.BindTypeImageRead, ImageFormat: renderer.Rgba8},
+	shaders.ImageArrayRead: {Type: renderer.BindTypeImageArrayRead, ImageFormat: renderer.Rgba8},
 }
 
 func (engine *Engine) prepareShaders() *renderer.FullShaders {
@@ -184,6 +185,8 @@ func imageFormatToWGPU(f renderer.ImageFormat) wgpu.TextureFormat {
 		return wgpu.TextureFormatRGBA8Unorm
 	case renderer.Bgra8:
 		return wgpu.TextureFormatBGRA8Unorm
+	case renderer.Rgba8Srgb:
+		return wgpu.TextureFormatRGBA8UnormSrgb
 	default:
 		panic(fmt.Sprintf("unhandled value %d", f))
 	}
