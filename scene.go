@@ -63,15 +63,15 @@ func (s *Scene) Fill(
 	style gfx.Fill,
 	transform curve.Affine,
 	brush gfx.Brush,
-	brushTransform *curve.Affine,
+	brushTransform curve.Affine,
 	path iter.Seq[curve.PathElement],
 ) {
 	t := jmath.TransformFromKurbo(transform)
 	s.encoding.EncodeTransform(t)
 	s.encoding.EncodeFillStyle(style)
 	if s.encoding.EncodePathElements(path, true) {
-		if brushTransform != nil {
-			if s.encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(*brushTransform))) {
+		if brushTransform != curve.Identity {
+			if s.encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(brushTransform))) {
 				s.encoding.SwapLastPathTags()
 			}
 		}
@@ -84,7 +84,7 @@ func (s *Scene) Stroke(
 	style curve.Stroke,
 	transform curve.Affine,
 	b gfx.Brush,
-	brushTransform *curve.Affine,
+	brushTransform curve.Affine,
 	shape iter.Seq[curve.PathElement],
 ) {
 	// The setting for tolerance are a compromise. For most applications,
@@ -131,8 +131,8 @@ func (s *Scene) Stroke(
 			encodeResult = s.encoding.EncodePathElements(slices.Values(dashed), false)
 		}
 		if encodeResult {
-			if brushTransform != nil {
-				if s.encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(*brushTransform))) {
+			if brushTransform != curve.Identity {
+				if s.encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(brushTransform))) {
 					s.encoding.SwapLastPathTags()
 				}
 			}
