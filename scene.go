@@ -39,10 +39,10 @@ func (s *Scene) bumpEstimate(affine *curve.Affine) renderer.BumpAllocatorMemory 
 func (s *Scene) PushLayer(
 	blend gfx.BlendMode,
 	alpha float32,
-	transform curve.Affine,
+	clipTransform curve.Affine,
 	clip iter.Seq[curve.PathElement],
 ) {
-	t := jmath.TransformFromKurbo(transform)
+	t := jmath.TransformFromKurbo(clipTransform)
 	s.encoding.EncodeTransform(t)
 	s.encoding.EncodeFillStyle(gfx.NonZero)
 	if !s.encoding.EncodePathElements(clip, true) {
