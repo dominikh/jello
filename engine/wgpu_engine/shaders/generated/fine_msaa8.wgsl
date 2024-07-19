@@ -541,7 +541,7 @@ var output: texture_storage_2d<rgba8unorm, write>;
 var gradients: texture_2d<f32>;
 
 @group(0) @binding(6)
-var images: binding_array<texture_2d<f32>, 2048>;
+var images: binding_array<texture_2d<f32>>;
 
 // MSAA-only bindings and utilities
 
