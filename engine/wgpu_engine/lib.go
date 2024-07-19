@@ -11,17 +11,9 @@ import (
 	"honnef.co/go/wgpu"
 )
 
-type AaSupport struct {
-	Area   bool
-	MSAA8  bool
-	MSAA16 bool
-}
-
 type RendererOptions struct {
-	SurfaceFormat       wgpu.TextureFormat
-	UseCPU              bool
-	AntialiasingSupport AaSupport
-	// TODO threading for shader init
+	SurfaceFormat wgpu.TextureFormat
+	UseCPU        bool
 }
 
 var bindTypeMapping = [...]renderer.BindType{
@@ -34,7 +26,6 @@ var bindTypeMapping = [...]renderer.BindType{
 }
 
 func (engine *Engine) prepareShaders() *renderer.FullShaders {
-	// XXX make use of options.AntialiasingSupport
 	// XXX support CPU shaders
 	var out renderer.FullShaders
 	outV := reflect.ValueOf(&out).Elem()
