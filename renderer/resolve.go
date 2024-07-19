@@ -3,6 +3,7 @@ package renderer
 import (
 	"encoding/binary"
 	"fmt"
+	"image"
 	"unsafe"
 
 	"honnef.co/go/jello/encoding"
@@ -15,6 +16,7 @@ import (
 type Resolver struct {
 	rampCache rampCache
 	patches   []ResolvedPatch
+	images    map[image.Image]uint32
 }
 
 func NewResolver() *Resolver {
@@ -22,6 +24,7 @@ func NewResolver() *Resolver {
 		rampCache: rampCache{
 			mapping: make(map[string]*rampCacheEntry),
 		},
+		images: make(map[image.Image]uint32),
 	}
 }
 
@@ -175,6 +178,7 @@ func (r *Resolver) Resolve(arena *mem.Arena, enc *encoding.Encoding) (Layout, Ra
 func (r *Resolver) resolvePatches(enc *encoding.Encoding) (encoding.StreamOffsets, []gfx.Image) {
 	r.rampCache.maintain()
 	// XXX glyph stuff
+	clear(r.images)
 	clear(r.patches)
 	r.patches = r.patches[:0]
 	var sizes encoding.StreamOffsets
@@ -196,16 +200,23 @@ func (r *Resolver) resolvePatches(enc *encoding.Encoding) (encoding.StreamOffset
 				},
 			})
 		case encoding.ImagePatch:
+			var idx uint32
+			if id, ok := r.images[patch.Image.Image]; ok {
+				idx = id
+			} else {
+				idx = imgIdx
+				imgIdx++
+				imgs = append(imgs, patch.Image)
+				r.images[patch.Image.Image] = idx
+			}
 			r.patches = append(r.patches, ResolvedPatch{
 				Kind: ResolvedPatchKindImage,
 				Image: ResolvedPatchImage{
-					Index:          imgIdx,
+					Index:          idx,
 					Image:          patch.Image,
 					DrawDataOffset: patch.DrawDataOffset + sizes.DrawData,
 				},
 			})
-			imgs = append(imgs, patch.Image)
-			imgIdx++
 		default:
 			panic(fmt.Sprintf("unhandled type %T", patch))
 		}
