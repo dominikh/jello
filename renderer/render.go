@@ -109,8 +109,10 @@ func (rd *Renderer) RenderEncodingCoarse(
 	var imageProxies []ImageProxy
 	if len(images) == 0 {
 		// We need at least one entry for the array of textures or the binding
-		// will be invalid.
-		imageProxies = mem.Append(arena, imageProxies, NewImageProxy(1, 1, Rgba8))
+		// will be invalid. Since we're not going to display it we can just
+		// reuse the gradient image.
+		imageProxies = mem.Append(arena, imageProxies, gradientImage)
+
 	}
 	// XXX handle when there are more images than slots in the array
 	for _, img := range images {
