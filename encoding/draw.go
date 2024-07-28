@@ -45,6 +45,9 @@ type drawColor struct {
 }
 
 func newDrawColor(color gfx.Color) drawColor {
+	if color == nil {
+		return drawColor{}
+	}
 	return drawColor{RGBA: color.LinearSRGB().PremulUint32()}
 }
 
@@ -78,6 +81,6 @@ type drawSweepGradient struct {
 type drawImage struct {
 	_ structs.HostLayout
 
-	index uint32
+	index       uint32
 	widthHeight uint32
 }
