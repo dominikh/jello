@@ -1,6 +1,7 @@
 package jello
 
 import (
+	"fmt"
 	"iter"
 	"slices"
 
@@ -10,6 +11,8 @@ import (
 	"honnef.co/go/jello/jmath"
 	"honnef.co/go/jello/renderer"
 )
+
+const debugTrace = false
 
 type Scene struct {
 	encoding  encoding.Encoding
@@ -42,6 +45,17 @@ func (s *Scene) PushLayer(
 	clipTransform curve.Affine,
 	clip iter.Seq[curve.PathElement],
 ) {
+	if debugTrace {
+		fmt.Println("{")
+		fmt.Println("\tvar clip curve.BezPath")
+		for el := range clip {
+			fmt.Printf("\tclip.Push(%#v)\n", el)
+		}
+		fmt.Printf("\ts.PushLayer(%#v, %g, %#v, clip.Elements())\n", blend, alpha, clipTransform)
+		fmt.Println("}")
+		return
+	}
+
 	t := jmath.TransformFromKurbo(clipTransform)
 	s.encoding.EncodeTransform(t)
 	s.encoding.EncodeFillStyle(gfx.NonZero)
@@ -56,6 +70,11 @@ func (s *Scene) PushLayer(
 }
 
 func (s *Scene) PopLayer() {
+	if debugTrace {
+		fmt.Println("s.PopLayer()")
+		return
+	}
+
 	s.encoding.EncodeEndClip()
 }
 
@@ -66,6 +85,17 @@ func (s *Scene) Fill(
 	brushTransform curve.Affine,
 	path iter.Seq[curve.PathElement],
 ) {
+	if debugTrace {
+		fmt.Println("{")
+		fmt.Println("\tvar clip curve.BezPath")
+		for el := range path {
+			fmt.Printf("\tclip.Push(%#v)\n", el)
+		}
+		fmt.Printf("\ts.Fill(%d, %#v, %#v, %#v, clip.Elements())\n", style, transform, brush, brushTransform)
+		fmt.Println("}")
+		return
+	}
+
 	t := jmath.TransformFromKurbo(transform)
 	s.encoding.EncodeTransform(t)
 	s.encoding.EncodeFillStyle(style)
