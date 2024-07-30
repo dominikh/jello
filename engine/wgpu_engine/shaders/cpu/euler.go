@@ -13,7 +13,7 @@ import (
 // Utility functions for Euler Spiral based stroke expansion.
 
 // Threshold for tangents to be considered near zero length
-const TANGENT_THRESH = 1e-6
+const tangentThresh = 1e-6
 
 // This struct contains parameters derived from a cubic Bézier for the
 // purpose of fitting a G1 continuous Euler spiral segment and estimating
@@ -21,18 +21,18 @@ const TANGENT_THRESH = 1e-6
 //
 // The tangent angles represent deviation from the chord, so that when they
 // are equal, the corresponding Euler spiral is a circular arc.
-type CubicParams struct {
+type cubicParams struct {
 	// Tangent angle relative to chord at start.
 	th0 float32
 	// Tangent angle relative to chord at end.
 	th1 float32
 	// The effective chord length, always a robustly nonzero value.
-	chord_len float32
+	chordLen float32
 	// The estimated error between the source cubic and the proposed Euler spiral.
 	err float32
 }
 
-type EulerParams struct {
+type eulerParams struct {
 	th0 float32
 	th1 float32
 	k0  float32
@@ -40,10 +40,10 @@ type EulerParams struct {
 	ch  float32
 }
 
-type EulerSeg struct {
-	p0     Vec2
-	p1     Vec2
-	params EulerParams
+type eulerSeg struct {
+	p0     vec2
+	p1     vec2
+	params eulerParams
 }
 
 // Compute parameters from endpoints and derivatives.
@@ -67,30 +67,30 @@ type EulerSeg struct {
 // near-semicircle, preserving G1 continuity), but the analytic error
 // calculation would be a huge overestimate. In that case, we just return
 // a rough estimate of the distance between the chord and the spiral segment.
-func cubicParamsFromPointsDerivs(p0, p1, q0, q1 Vec2, dt float32) CubicParams {
-	chord := p1.Sub(p0)
-	chord_squared := chord.lengthSquared()
-	chord_len := jmath.Sqrt32(chord_squared)
+func cubicParamsFromPointsDerivs(p0, p1, q0, q1 vec2, dt float32) cubicParams {
+	chord := p1.sub(p0)
+	chordSquared := chord.lengthSquared()
+	chordLen := jmath.Sqrt32(chordSquared)
 	// Chord is near-zero; straight line case.
-	if chord_squared < TANGENT_THRESH*TANGENT_THRESH {
+	if chordSquared < tangentThresh*tangentThresh {
 		// This error estimate was determined empirically through randomized
 		// testing, though it is likely it can be derived analytically.
-		chord_err := jmath.Sqrt32((9.0/32.0)*(q0.lengthSquared()+q1.lengthSquared())) * dt
-		return CubicParams{
-			th0:       0.0,
-			th1:       0.0,
-			chord_len: TANGENT_THRESH,
-			err:       chord_err,
+		chordError := jmath.Sqrt32((9.0/32.0)*(q0.lengthSquared()+q1.lengthSquared())) * dt
+		return cubicParams{
+			th0:      0.0,
+			th1:      0.0,
+			chordLen: tangentThresh,
+			err:      chordError,
 		}
 	}
-	scale := dt / chord_squared
-	h0 := Vec2{
+	scale := dt / chordSquared
+	h0 := vec2{
 		q0.x*chord.x + q0.y*chord.y,
 		q0.y*chord.x - q0.x*chord.y,
 	}
 	th0 := h0.atan2()
 	d0 := h0.length() * scale
-	h1 := Vec2{
+	h1 := vec2{
 		q1.x*chord.x + q1.y*chord.y,
 		q1.x*chord.y - q1.y*chord.x,
 	}
@@ -127,20 +127,20 @@ func cubicParamsFromPointsDerivs(p0, p1, q0, q1 Vec2, dt float32) CubicParams {
 		asymm := jmath.Abs32(th0 - th1)
 		dist := jmath.Hypot32(d0-e0, d1-e1)
 		ctr := 4.625e-6*jmath.Pow32(symm, 5) + 7.5e-3*asymm*(symm*symm)
-		halo_symm := 5e-3 * symm * dist
-		halo_asymm := 7e-2 * asymm * dist
-		err = ctr + 1.55*aerr + halo_symm + halo_asymm
+		haloSymm := 5e-3 * symm * dist
+		haloAsymm := 7e-2 * asymm * dist
+		err = ctr + 1.55*aerr + haloSymm + haloAsymm
 	}
-	err *= chord_len
-	return CubicParams{
+	err *= chordLen
+	return cubicParams{
 		th0,
 		th1,
-		chord_len,
+		chordLen,
 		err,
 	}
 }
 
-func eulerParamsFromAngles(th0, th1 float32) EulerParams {
+func eulerParamsFromAngles(th0, th1 float32) eulerParams {
 	k0 := th0 + th1
 	dth := th1 - th0
 	d2 := dth * dth
@@ -162,7 +162,7 @@ func eulerParamsFromAngles(th0, th1 float32) EulerParams {
 	b = -1./24. + d2*0.0024702380951963226 - d2*d2*3.7297408997537985e-05
 	c = 1./1920. - d2*4.87350869747975e-05 - k2*3.1001936068463107e-06
 	ch += (b + c*k2) * k2
-	return EulerParams{
+	return eulerParams{
 		th0,
 		th1,
 		k0,
@@ -171,41 +171,41 @@ func eulerParamsFromAngles(th0, th1 float32) EulerParams {
 	}
 }
 
-func (self EulerParams) eval_th(t float32) float32 {
-	return (self.k0+0.5*self.k1*(t-1.0))*t - self.th0
+func (ep eulerParams) evalTh(t float32) float32 {
+	return (ep.k0+0.5*ep.k1*(t-1.0))*t - ep.th0
 }
 
-func (self EulerParams) eval(t float32) Vec2 {
-	thm := self.eval_th(t * 0.5)
-	k0 := self.k0
-	k1 := self.k1
-	u, v := integ_euler_10((k0+k1*(0.5*t-0.5))*t, k1*t*t)
-	s := t / self.ch * jmath.Sin32(thm)
-	c := t / self.ch * jmath.Cos32(thm)
+func (ep eulerParams) eval(t float32) vec2 {
+	thm := ep.evalTh(t * 0.5)
+	k0 := ep.k0
+	k1 := ep.k1
+	u, v := integrateEuler10((k0+k1*(0.5*t-0.5))*t, k1*t*t)
+	s := t / ep.ch * jmath.Sin32(thm)
+	c := t / ep.ch * jmath.Cos32(thm)
 	x := u*c - v*s
 	y := -v*c - u*s
-	return Vec2{x, y}
+	return vec2{x, y}
 }
 
-func (self EulerParams) eval_with_offset(t, offset float32) Vec2 {
-	th := self.eval_th(t)
-	v := Vec2{offset * jmath.Sin32(th), offset * jmath.Cos32(th)}
-	return self.eval(t).Add(v)
+func (ep eulerParams) evalWithOffset(t, offset float32) vec2 {
+	th := ep.evalTh(t)
+	v := vec2{offset * jmath.Sin32(th), offset * jmath.Cos32(th)}
+	return ep.eval(t).add(v)
 }
 
-func eulerSegFromParams(p0, p1 Vec2, params EulerParams) EulerSeg {
-	return EulerSeg{p0, p1, params}
+func eulerSegFromParams(p0, p1 vec2, params eulerParams) eulerSeg {
+	return eulerSeg{p0, p1, params}
 }
 
 // Note: offset provided is normalized so that 1 = chord length, while
 // the return value is in the same coordinate space as the endpoints.
-func (self EulerSeg) eval_with_offset(t, normalized_offset float32) Vec2 {
-	chord := self.p1.Sub(self.p0)
-	v := self.params.eval_with_offset(t, normalized_offset)
+func (es eulerSeg) evalWithOffset(t, normalizedOffset float32) vec2 {
+	chord := es.p1.sub(es.p0)
+	v := es.params.evalWithOffset(t, normalizedOffset)
 	x, y := v.x, v.y
-	return Vec2{
-		self.p0.x + chord.x*x - chord.y*y,
-		self.p0.y + chord.x*y + chord.y*x,
+	return vec2{
+		es.p0.x + chord.x*x - chord.y*y,
+		es.p0.y + chord.x*y + chord.y*x,
 	}
 }
 
@@ -223,7 +223,7 @@ func (self EulerSeg) eval_with_offset(t, normalized_offset float32) Vec2 {
 // First, it doesn't really address the cusp case, where angles will remain
 // large even after further subdivision, and second, the cost of even this
 // more conservative choice is modest; it's just some multiply-adds.
-func integ_euler_10(k0, k1 float32) (float32, float32) {
+func integrateEuler10(k0, k1 float32) (float32, float32) {
 	t1_1 := k0
 	t1_2 := 0.5 * k1
 	t2_2 := t1_1 * t1_1
@@ -255,41 +255,41 @@ func integ_euler_10(k0, k1 float32) (float32, float32) {
 	return u, v
 }
 
-const BREAK1 = 0.8
-const BREAK2 = 1.25
-const BREAK3 = 2.1
-const SIN_SCALE = 1.0976991822760038
-const QUAD_A1 = 0.6406
-const QUAD_B1 = -0.81
-const QUAD_C1 = 0.9148117935952064
-const QUAD_A2 = 0.5
-const QUAD_B2 = -0.156
-const QUAD_C2 = 0.16145779359520596
+const break1 = 0.8
+const break2 = 1.25
+const break3 = 2.1
+const sinScale = 1.0976991822760038
+const quadA1 = 0.6406
+const quadB1 = -0.81
+const quadC1 = 0.9148117935952064
+const quadA2 = 0.5
+const quadB2 = -0.156
+const quadC2 = 0.16145779359520596
 
-func espc_int_approx(x float32) float32 {
+func espcIntApprox(x float32) float32 {
 	y := jmath.Abs32(x)
 	var a float32
-	if y < BREAK1 {
-		a = jmath.Sin32(SIN_SCALE*y) * (1.0 / SIN_SCALE)
-	} else if y < BREAK2 {
+	if y < break1 {
+		a = jmath.Sin32(sinScale*y) * (1.0 / sinScale)
+	} else if y < break2 {
 		a = (jmath.Sqrt32(8.0)/3.0)*(y-1.0)*jmath.Sqrt32(jmath.Abs32(y-1.0)) + math.Pi/4
 	} else {
 		var a_, b, c float32
-		if y < BREAK3 {
-			a_, b, c = QUAD_A1, QUAD_B1, QUAD_C1
+		if y < break3 {
+			a_, b, c = quadA1, quadB1, quadC1
 		} else {
-			a_, b, c = QUAD_A2, QUAD_B2, QUAD_C2
+			a_, b, c = quadA2, quadB2, quadC2
 		}
 		a = a_*y*y + b*y + c
 	}
 	return jmath.Copysign32(a, x)
 }
 
-func espc_int_inv_approx(x float32) float32 {
+func espcIntInvApprox(x float32) float32 {
 	y := jmath.Abs32(x)
 	var a float32
 	if y < 0.7010707591262915 {
-		a = jmath.Asin32(x*SIN_SCALE) * (1.0 / SIN_SCALE)
+		a = jmath.Asin32(x*sinScale) * (1.0 / sinScale)
 	} else if y < 0.903249293595206 {
 		b := y - math.Pi/4
 		u := jmath.Copysign32(jmath.Pow32(jmath.Abs32(b), (2.0/3.0)), b)
@@ -297,11 +297,11 @@ func espc_int_inv_approx(x float32) float32 {
 	} else {
 		var u, v, w float32
 		if y < 2.038857793595206 {
-			const B = 0.5 * QUAD_B1 / QUAD_A1
-			u, v, w = B*B-QUAD_C1/QUAD_A1, 1.0/QUAD_A1, B
+			const B = 0.5 * quadB1 / quadA1
+			u, v, w = B*B-quadC1/quadA1, 1.0/quadA1, B
 		} else {
-			const B = 0.5 * QUAD_B2 / QUAD_A2
-			u, v, w = B*B-QUAD_C2/QUAD_A2, 1.0/QUAD_A2, B
+			const B = 0.5 * quadB2 / quadA2
+			u, v, w = B*B-quadC2/quadA2, 1.0/quadA2, B
 		}
 		a = jmath.Sqrt32(u+v*y) - w
 	}
