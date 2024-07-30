@@ -55,7 +55,7 @@ const (
 
 type cpuShader struct {
 	kind   cpuShaderKind
-	shader func(uint32, []cpu.CPUBinding)
+	shader func(*mem.Arena, uint32, []cpu.CPUBinding)
 }
 
 type shader struct {
@@ -463,7 +463,7 @@ func (eng *Engine) RunRecording(
 				// command buffer submission completes (and, in WebGPU, the async
 				// mapping operations on the buffers completes).
 				resources := transientMap.createCPUResources(arena, &bindMap, bindings)
-				s.shader(wgSize[0], resources)
+				s.shader(arena, wgSize[0], resources)
 			case *wgpuShader:
 				bindGroup := transientMap.createBindGroup(
 					arena,
@@ -505,7 +505,7 @@ func (eng *Engine) RunRecording(
 				indirect := safeish.SliceCast[[]uint32](b)
 				n_wg = indirect[0]
 				resources := transientMap.createCPUResources(arena, &bindMap, bindings)
-				s.shader(n_wg, resources)
+				s.shader(arena, n_wg, resources)
 			case *wgpuShader:
 				bindGroup := transientMap.createBindGroup(
 					arena,

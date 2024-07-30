@@ -16,6 +16,7 @@ import (
 
 	"honnef.co/go/jello/encoding"
 	"honnef.co/go/jello/jmath"
+	"honnef.co/go/jello/mem"
 	"honnef.co/go/jello/renderer"
 	"honnef.co/go/safeish"
 )
@@ -226,7 +227,7 @@ func fromBytes[E any, T *E](b []byte) T {
 	return safeish.Cast[T](&b[0])
 }
 
-func Backdrop(_ uint32, resources []CPUBinding) {
+func Backdrop(_ *mem.Arena, _ uint32, resources []CPUBinding) {
 	config := fromBytes[renderer.ConfigUniform](resources[0].(CPUBuffer))
 	paths := safeish.SliceCast[[]renderer.Path](resources[2].(CPUBuffer))
 	tiles := safeish.SliceCast[[]renderer.Tile](resources[3].(CPUBuffer))
@@ -247,7 +248,7 @@ func Backdrop(_ uint32, resources []CPUBinding) {
 	}
 }
 
-func BboxClear(_ uint32, resources []CPUBinding) {
+func BboxClear(_ *mem.Arena, _ uint32, resources []CPUBinding) {
 	config := fromBytes[renderer.ConfigUniform](resources[0].(CPUBuffer))
 	pathBboxes := safeish.SliceCast[[]renderer.PathBbox](resources[1].(CPUBuffer))
 	for i := range config.Layout.NumPaths {
@@ -258,7 +259,7 @@ func BboxClear(_ uint32, resources []CPUBinding) {
 	}
 }
 
-func PathTagReduce(numWgs uint32, resources []CPUBinding) {
+func PathTagReduce(_ *mem.Arena, numWgs uint32, resources []CPUBinding) {
 	config := fromBytes[renderer.ConfigUniform](resources[0].(CPUBuffer))
 	scene := safeish.SliceCast[[]uint32](resources[1].(CPUBuffer))
 	reduced := safeish.SliceCast[[]renderer.PathMonoid](resources[2].(CPUBuffer))
@@ -274,7 +275,7 @@ func PathTagReduce(numWgs uint32, resources []CPUBinding) {
 	}
 }
 
-func TileAlloc(_ uint32, resources []CPUBinding) {
+func TileAlloc(_ *mem.Arena, _ uint32, resources []CPUBinding) {
 	const SX = 1.0 / (TILE_WIDTH)
 	const SY = 1.0 / (TILE_HEIGHT)
 
@@ -321,7 +322,7 @@ func TileAlloc(_ uint32, resources []CPUBinding) {
 	}
 }
 
-func Binning(numWgs uint32, resources []CPUBinding) {
+func Binning(arena *mem.Arena, numWgs uint32, resources []CPUBinding) {
 	const SX = 1.0 / (N_TILE_X * TILE_WIDTH)
 	const SY = 1.0 / (N_TILE_Y * TILE_HEIGHT)
 
@@ -335,9 +336,8 @@ func Binning(numWgs uint32, resources []CPUBinding) {
 	bin_header := safeish.SliceCast[[]renderer.BinHeader](resources[7].(CPUBuffer))
 
 	for wg := range numWgs {
-		// OPT(dh): use arena
-		counts := make([]uint32, WG_SIZE)
-		bboxes := make([][4]int32, WG_SIZE)
+		counts := mem.NewSlice[[]uint32](arena, WG_SIZE, WG_SIZE)
+		bboxes := mem.NewSlice[[][4]int32](arena, WG_SIZE, WG_SIZE)
 		width_in_bins := int32((config.WidthInTiles + N_TILE_X - 1) / N_TILE_X)
 		height_in_bins := int32((config.HeightInTiles + N_TILE_Y - 1) / N_TILE_Y)
 		for local_ix := range uint32(WG_SIZE) {
@@ -382,8 +382,7 @@ func Binning(numWgs uint32, resources []CPUBinding) {
 			}
 			bboxes[local_ix] = [4]int32{x0, y0, x1, y1}
 		}
-		// OPT(dh): use arena
-		chunk_offset := make([]uint32, WG_SIZE)
+		chunk_offset := mem.NewSlice[[]uint32](arena, WG_SIZE, WG_SIZE)
 		for local_ix := range uint32(WG_SIZE) {
 			global_ix := wg*WG_SIZE + local_ix
 			chunk_offset[local_ix] = bump.Binning
@@ -417,7 +416,7 @@ func bbox_intersect(a, b [4]float32) [4]float32 {
 	}
 }
 
-func ClipLeaf(_ uint32, resources []CPUBinding) {
+func ClipLeaf(arena *mem.Arena, _ uint32, resources []CPUBinding) {
 	type clipStackElement struct {
 		// index of draw object
 		parent_ix uint32
@@ -431,7 +430,6 @@ func ClipLeaf(_ uint32, resources []CPUBinding) {
 	draw_monoids := safeish.SliceCast[[]renderer.DrawMonoid](resources[5].(CPUBuffer))
 	clip_bboxes := safeish.SliceCast[[][4]float32](resources[6].(CPUBuffer))
 
-	// OPT(dh): use arena?
 	var stack []clipStackElement
 	for global_ix := range config.Layout.NumClips {
 		clip_el := clip_inp[global_ix]
@@ -459,7 +457,7 @@ func ClipLeaf(_ uint32, resources []CPUBinding) {
 			}
 			clip_bboxes[global_ix] = bbox
 			parent_ix := clip_el.Idx
-			stack = append(stack, clipStackElement{
+			stack = mem.Append(arena, stack, clipStackElement{
 				parent_ix,
 				path_ix,
 				bbox,
@@ -482,14 +480,13 @@ func ClipLeaf(_ uint32, resources []CPUBinding) {
 	}
 }
 
-func ClipReduce(numWgs uint32, resources []CPUBinding) {
+func ClipReduce(arena *mem.Arena, numWgs uint32, resources []CPUBinding) {
 	clip_inp := safeish.SliceCast[[]renderer.Clip](resources[0].(CPUBuffer))
 	path_bboxes := safeish.SliceCast[[]renderer.PathBbox](resources[1].(CPUBuffer))
 	reduced := safeish.SliceCast[[]renderer.ClipBic](resources[2].(CPUBuffer))
 	clip_out := safeish.SliceCast[[]renderer.ClipElement](resources[3].(CPUBuffer))
 
-	// OPT(dh): use arena?
-	scratch := make([]uint32, 0, WG_SIZE)
+	scratch := mem.NewSlice[[]uint32](arena, 0, WG_SIZE)
 	for wg_ix := range numWgs {
 		scratch = scratch[:0]
 		var bic_reduced renderer.ClipBic
@@ -504,7 +501,7 @@ func ClipReduce(numWgs uint32, resources []CPUBinding) {
 			bic := renderer.ClipBic{A: 1 - is_push, B: is_push}
 			bic_reduced = bic.Combine(bic_reduced)
 			if is_push != 0 && bic_reduced.A == 0 {
-				scratch = append(scratch, global_ix)
+				scratch = mem.Append(arena, scratch, global_ix)
 			}
 		}
 		reduced[wg_ix] = bic_reduced
@@ -526,7 +523,7 @@ func ClipReduce(numWgs uint32, resources []CPUBinding) {
 	}
 }
 
-func DrawReduce(n_wg uint32, resources []CPUBinding) {
+func DrawReduce(_ *mem.Arena, n_wg uint32, resources []CPUBinding) {
 	config := fromBytes[renderer.ConfigUniform](resources[0].(CPUBuffer))
 	scene := safeish.SliceCast[[]uint32](resources[1].(CPUBuffer))
 	reduced := safeish.SliceCast[[]renderer.DrawMonoid](resources[2].(CPUBuffer))
@@ -566,7 +563,7 @@ func read_draw_tag_from_scene(config *renderer.ConfigUniform, scene []uint32, ix
 	}
 }
 
-func PathCountSetup(_ uint32, resources []CPUBinding) {
+func PathCountSetup(_ *mem.Arena, _ uint32, resources []CPUBinding) {
 	bump := fromBytes[renderer.BumpAllocators](resources[0].(CPUBuffer))
 	indirect := fromBytes[renderer.IndirectCount](resources[1].(CPUBuffer))
 
@@ -576,7 +573,7 @@ func PathCountSetup(_ uint32, resources []CPUBinding) {
 	indirect.Z = 1
 }
 
-func PathTagScan(n_wg uint32, resources []CPUBinding) {
+func PathTagScan(_ *mem.Arena, n_wg uint32, resources []CPUBinding) {
 	config := fromBytes[renderer.ConfigUniform](resources[0].(CPUBuffer))
 	scene := safeish.SliceCast[[]uint32](resources[1].(CPUBuffer))
 	reduced := safeish.SliceCast[[]renderer.PathMonoid](resources[2].(CPUBuffer))
@@ -596,7 +593,7 @@ func PathTagScan(n_wg uint32, resources []CPUBinding) {
 	}
 }
 
-func PathTiling(_ uint32, resources []CPUBinding) {
+func PathTiling(_ *mem.Arena, _ uint32, resources []CPUBinding) {
 	bump := fromBytes[renderer.BumpAllocators](resources[0].(CPUBuffer))
 	seg_counts := safeish.SliceCast[[]renderer.SegmentCount](resources[1].(CPUBuffer))
 	lines := safeish.SliceCast[[]renderer.LineSoup](resources[2].(CPUBuffer))
@@ -770,7 +767,7 @@ func PathTiling(_ uint32, resources []CPUBinding) {
 	}
 }
 
-func PathCount(_ uint32, resources []CPUBinding) {
+func PathCount(_ *mem.Arena, _ uint32, resources []CPUBinding) {
 	bump := fromBytes[renderer.BumpAllocators](resources[1].(CPUBuffer))
 	lines := safeish.SliceCast[[]renderer.LineSoup](resources[2].(CPUBuffer))
 	paths := safeish.SliceCast[[]renderer.Path](resources[3].(CPUBuffer))
@@ -1080,7 +1077,7 @@ func (self *TileState) write_end_clip(
 	self.cmd_offset += 3
 }
 
-func Coarse(_ uint32, resources []CPUBinding) {
+func Coarse(arena *mem.Arena, _ uint32, resources []CPUBinding) {
 	config := fromBytes[renderer.ConfigUniform](resources[0].(CPUBuffer))
 	scene := safeish.SliceCast[[]uint32](resources[1].(CPUBuffer))
 	draw_monoids := safeish.SliceCast[[]renderer.DrawMonoid](resources[2].(CPUBuffer))
@@ -1098,7 +1095,7 @@ func Coarse(_ uint32, resources []CPUBinding) {
 	n_bins := width_in_bins * height_in_bins
 	bin_data_start := config.Layout.BinDataStart
 	drawtag_base := config.Layout.DrawTagBase
-	compacted := make([][]uint32, N_TILE)
+	compacted := mem.NewSlice[[][]uint32](arena, N_TILE, N_TILE)
 	n_partitions := (config.Layout.NumDrawObjects + N_TILE - 1) / N_TILE
 	for bin := range n_bins {
 		for i := range compacted {
@@ -1127,7 +1124,7 @@ func Coarse(_ uint32, resources []CPUBinding) {
 					y1 := jmath.Clamp(int32(path.Bbox[3])-int32(bin_tile_y), 0, N_TILE_Y)
 					for y := y0; y < y1; y++ {
 						for x := x0; x < x1; x++ {
-							compacted[(y*N_TILE_X + x)] = append(compacted[(y*N_TILE_X+x)], drawobj_ix)
+							compacted[(y*N_TILE_X + x)] = mem.Append(arena, compacted[(y*N_TILE_X+x)], drawobj_ix)
 						}
 					}
 				}
@@ -1286,7 +1283,7 @@ func from_poly2(p0 Vec2, p1 Vec2) Transform {
 		p0.y}
 }
 
-func DrawLeaf(n_wg uint32, resources []CPUBinding) {
+func DrawLeaf(_ *mem.Arena, n_wg uint32, resources []CPUBinding) {
 	config := fromBytes[renderer.ConfigUniform](resources[0].(CPUBuffer))
 	scene := safeish.SliceCast[[]uint32](resources[1].(CPUBuffer))
 	reduced := safeish.SliceCast[[]renderer.DrawMonoid](resources[2].(CPUBuffer))
@@ -1468,7 +1465,7 @@ func DrawLeaf(n_wg uint32, resources []CPUBinding) {
 }
 
 func transformRead(transform_base uint32, ix uint32, data []uint32) Transform {
-	z := make([]float32, 6)
+	var z [6]float32
 	base := (transform_base + ix*6)
 	for i := range uint32(6) {
 		z[i] = math.Float32frombits(data[base+i])
@@ -1476,7 +1473,7 @@ func transformRead(transform_base uint32, ix uint32, data []uint32) Transform {
 	return Transform(z)
 }
 
-func PathTilingSetup(_ uint32, resources []CPUBinding) {
+func PathTilingSetup(_ *mem.Arena, _ uint32, resources []CPUBinding) {
 	bump := fromBytes[renderer.BumpAllocators](resources[0].(CPUBuffer))
 	indirect := fromBytes[renderer.IndirectCount](resources[1].(CPUBuffer))
 	segments := bump.SegCounts

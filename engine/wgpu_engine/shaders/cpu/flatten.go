@@ -11,6 +11,7 @@ import (
 
 	"honnef.co/go/jello/encoding"
 	"honnef.co/go/jello/jmath"
+	"honnef.co/go/jello/mem"
 	"honnef.co/go/jello/renderer"
 	"honnef.co/go/safeish"
 )
@@ -652,7 +653,7 @@ func draw_join(
 	}
 }
 
-func Flatten(n_wg uint32, resources []CPUBinding) {
+func Flatten(_ *mem.Arena, n_wg uint32, resources []CPUBinding) {
 	config := fromBytes[renderer.ConfigUniform](resources[0].(CPUBuffer))
 	scene := safeish.SliceCast[[]uint32](resources[1].(CPUBuffer))
 	tag_monoids := safeish.SliceCast[[]renderer.PathMonoid](resources[2].(CPUBuffer))
