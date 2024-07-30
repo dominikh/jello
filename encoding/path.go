@@ -14,50 +14,65 @@ import (
 type Style struct {
 	_ structs.HostLayout
 
+	// Encodes the stroke and fill style parameters. This field is split into two 16-bit
+	// parts:
+	//
+	// - `flags: u16` - encodes fill vs stroke, even-odd vs non-zero fill mode for fills and cap
+	//                  and join style for strokes. See the FLAGS_* constants below for more
+	//                  information.
+	// ```text
+	// flags: |style|fill|join|start cap|end cap|reserved|
+	//  bits:  0     1    2-3  4-5       6-7     8-15
+	// ```
+	//
+	// - `miter_limit: u16` - The miter limit for a stroke, encoded in binary16 (half) floating
+	//                        point representation. This field is only meaningful for the
+	//                        `Join::Miter` join style. It's ignored for other stroke styles and
+	//                        fills.
 	FlagsAndMiterLimits uint32
 	LineWidth           float32
 }
 
 const (
 	// 0 for a fill, 1 for a stroke
-	flagsStyleBit uint32 = 0x8000_0000
+	FlagsStyleBit uint32 = 0x8000_0000
 
 	// 0 for non-zero, 1 for even-odd
-	flagsFillBit uint32 = 0x4000_0000
+	FlagsFillBit uint32 = 0x4000_0000
 
 	// Encodings for join style:
 	//    - 0b00 -> bevel
 	//    - 0b01 -> miter
 	//    - 0b10 -> round
-	flagsJoinBitsBevel uint32 = 0
-	flagsJoinBitsMiter uint32 = 0x1000_0000
-	flagsJoinBitsRound uint32 = 0x2000_0000
-	flagsJoinMask      uint32 = 0x3000_0000
+	FlagsJoinBitsBevel uint32 = 0
+	FlagsJoinBitsMiter uint32 = 0x1000_0000
+	FlagsJoinBitsRound uint32 = 0x2000_0000
+	FlagsJoinMask      uint32 = 0x3000_0000
 
 	// Encodings for cap style:
 	//    - 0b00 -> butt
 	//    - 0b01 -> square
 	//    - 0b10 -> round
 	flagsCapBitsButt   uint32 = 0
-	flagsCapBitsSquare uint32 = 0x0100_0000
-	flagsCapBitsRound  uint32 = 0x0200_0000
+	FlagsCapBitsSquare uint32 = 0x0100_0000
+	FlagsCapBitsRound  uint32 = 0x0200_0000
 
 	flagsStartCapBitsButt   uint32 = flagsCapBitsButt << 2
-	flagsStartCapBitsSquare uint32 = flagsCapBitsSquare << 2
-	flagsStartCapBitsRound  uint32 = flagsCapBitsRound << 2
+	flagsStartCapBitsSquare uint32 = FlagsCapBitsSquare << 2
+	flagsStartCapBitsRound  uint32 = FlagsCapBitsRound << 2
 	flagsEndCapBitsButt     uint32 = flagsCapBitsButt
-	flagsEndCapBitsSquare   uint32 = flagsCapBitsSquare
-	flagsEndCapBitsRound    uint32 = flagsCapBitsRound
+	flagsEndCapBitsSquare   uint32 = FlagsCapBitsSquare
+	flagsEndCapBitsRound    uint32 = FlagsCapBitsRound
 
-	flagsStartCapMask uint32 = 0x0C00_0000
-	flagsEndCapMask   uint32 = 0x0300_0000
-	miterLimitMask    uint32 = 0xFFFF
+	FlagsStartCapMask uint32 = 0x0C00_0000
+	FlagsEndCapMask   uint32 = 0x0300_0000
+	MiterLimitMask    uint32 = 0xFFFF
 )
 
 func styleFromFill(fill gfx.Fill) Style {
 	var fillBit uint32
 	if fill == gfx.EvenOdd {
-		fillBit = flagsFillBit
+		fillBit = FlagsFillBit
 	}
 	return Style{
 		FlagsAndMiterLimits: fillBit,
@@ -66,15 +81,15 @@ func styleFromFill(fill gfx.Fill) Style {
 }
 
 func styleFromStroke(stroke curve.Stroke) Style {
-	style := flagsStyleBit
+	style := FlagsStyleBit
 	var join uint32
 	switch stroke.Join {
 	case curve.BevelJoin:
-		join = flagsJoinBitsBevel
+		join = FlagsJoinBitsBevel
 	case curve.MiterJoin:
-		join = flagsJoinBitsMiter
+		join = FlagsJoinBitsMiter
 	case curve.RoundJoin:
-		join = flagsJoinBitsRound
+		join = FlagsJoinBitsRound
 	}
 	var startCap uint32
 	switch stroke.StartCap {

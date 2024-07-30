@@ -9,8 +9,10 @@ import (
 	"math/bits"
 	"sync"
 
+	"honnef.co/go/jello/engine/wgpu_engine/shaders/cpu"
 	"honnef.co/go/jello/mem"
 	"honnef.co/go/jello/renderer"
+	"honnef.co/go/safeish"
 	"honnef.co/go/wgpu"
 )
 
@@ -43,8 +45,17 @@ type wgpuShader struct {
 	bindGroupLayout *wgpu.BindGroupLayout
 }
 
+type cpuShaderKind int
+
+const (
+	cpuShaderKindMissing cpuShaderKind = iota
+	cpuShaderKindPresent
+	cpuShaderKindSkipped
+)
+
 type cpuShader struct {
-	shader func(uint32, []cpuBinding)
+	kind   cpuShaderKind
+	shader func(uint32, []cpu.CPUBinding)
 }
 
 type shader struct {
@@ -80,18 +91,18 @@ type ExternalImage struct {
 type materializedBufferKind int
 
 const (
-	materializedBufferKindBytes materializedBufferKind = iota + 1
-	materializedBufferKindBuffer
+	materializedBufferKindCPU materializedBufferKind = iota + 1
+	materializedBufferKindGPU
 )
 
 type materializedBuffer struct {
-	kind   materializedBufferKind
-	bytes  []byte
-	buffer *wgpu.Buffer
+	kind materializedBufferKind
+	cpu  []byte
+	gpu  *wgpu.Buffer
 }
 
 type persistentBindMap struct {
-	bufMap   map[renderer.ResourceID]bindMapBuffer
+	bufMap   map[renderer.ResourceID]*bindMapBuffer
 	imageMap map[renderer.ResourceID]bindMapImage
 }
 
@@ -107,7 +118,7 @@ type bindMapImage struct {
 }
 
 type bindMap struct {
-	bufMap        mem.BinaryTreeMap[renderer.ResourceID, bindMapBuffer]
+	bufMap        mem.BinaryTreeMap[renderer.ResourceID, *bindMapBuffer]
 	imageMap      mem.BinaryTreeMap[renderer.ResourceID, bindMapImage]
 	pendingClears mem.BinaryTreeMap[renderer.ResourceID, struct{}]
 }
@@ -129,14 +140,14 @@ type transientBindMap struct {
 type transientBufKind int
 
 const (
-	transientBufKindBytes transientBufKind = iota + 1
-	transientBufKindBuffer
+	transientBufKindCPU transientBufKind = iota + 1
+	transientBufKindGPU
 )
 
 type transientBuf struct {
-	kind   transientBufKind
-	bytes  []byte
-	buffer *wgpu.Buffer
+	kind transientBufKind
+	cpu  []byte
+	gpu  *wgpu.Buffer
 }
 
 func New(dev *wgpu.Device, options *RendererOptions) *Engine {
@@ -151,7 +162,7 @@ func New(dev *wgpu.Device, options *RendererOptions) *Engine {
 
 		resolver: renderer.NewResolver(),
 		resident: persistentBindMap{
-			bufMap:   make(map[renderer.ResourceID]bindMapBuffer),
+			bufMap:   make(map[renderer.ResourceID]*bindMapBuffer),
 			imageMap: make(map[renderer.ResourceID]bindMapImage),
 		},
 	}
@@ -175,18 +186,28 @@ func (eng *Engine) buildShaders() {
 	wg.Wait()
 }
 
-type cpuShaderType interface {
-	// XXX implement
-}
-
 func (eng *Engine) prepareShader(
 	label string,
 	wgsl []byte,
 	layout []renderer.BindType,
-	cpuShader cpuShaderType,
+	cpuShader cpuShader,
 ) renderer.ShaderID {
 	if eng.UseCPU {
-		panic("XXX unimplemented")
+		switch cpuShader.kind {
+		case cpuShaderKindPresent:
+			id := renderer.ShaderID(len(eng.shaders))
+			eng.shaders = append(eng.shaders, shader{Label: label, CPU: &cpuShader})
+			return id
+		case cpuShaderKindSkipped:
+			// This shader is unused in CPU mode, create a dummy shader
+			id := renderer.ShaderID(len(eng.shaders))
+			eng.shaders = append(eng.shaders, shader{Label: label})
+			return id
+		case cpuShaderKindMissing:
+			// Create a GPU shader as we don't have a CPU shader
+		default:
+			panic(fmt.Sprintf("internal error: unhandled kind %v", cpuShader.kind))
+		}
 	}
 
 	entries := make([]wgpu.BindGroupLayoutEntry, len(layout))
@@ -329,7 +350,7 @@ func (eng *Engine) RunRecording(
 		case *renderer.Upload:
 			bufProxy := cmd.Buffer
 			bytes := cmd.Data
-			transientMap.bufs.Insert(arena, bufProxy.ID, transientBuf{kind: transientBufKindBytes, bytes: bytes})
+			transientMap.bufs.Insert(arena, bufProxy.ID, transientBuf{kind: transientBufKindCPU, cpu: bytes})
 			usage := wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst | wgpu.BufferUsageStorage
 			buf := eng.pool.getBuf(bufProxy.Size, bufProxy.Name, usage, eng.Device)
 			queue.WriteBuffer(buf, 0, bytes)
@@ -338,7 +359,7 @@ func (eng *Engine) RunRecording(
 		case *renderer.UploadUniform:
 			bufProxy := cmd.Buffer
 			bytes := cmd.Data
-			transientMap.bufs.Insert(arena, bufProxy.ID, transientBuf{kind: transientBufKindBytes, bytes: bytes})
+			transientMap.bufs.Insert(arena, bufProxy.ID, transientBuf{kind: transientBufKindCPU, cpu: bytes})
 			usage := wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst
 			buf := eng.pool.getBuf(bufProxy.Size, bufProxy.Name, usage, eng.Device)
 			queue.WriteBuffer(buf, 0, bytes)
@@ -433,7 +454,16 @@ func (eng *Engine) RunRecording(
 			shader := eng.shaders[shaderID]
 			switch s := shader.Select().(type) {
 			case *cpuShader:
-				panic("XXX no support for CPU shaders")
+				// The current strategy is to run the CPU shader synchronously. This
+				// works because there is currently the added constraint that data
+				// can only flow from CPU to GPU, not the other way around. If and
+				// when we implement that, we will need to defer the execution. Of
+				// course, we will also need to wire up more async synchronization
+				// mechanisms, as the CPU dispatch can't run until the preceding
+				// command buffer submission completes (and, in WebGPU, the async
+				// mapping operations on the buffers completes).
+				resources := transientMap.createCPUResources(arena, &bindMap, bindings)
+				s.shader(wgSize[0], resources)
 			case *wgpuShader:
 				bindGroup := transientMap.createBindGroup(
 					arena,
@@ -469,7 +499,13 @@ func (eng *Engine) RunRecording(
 			shader := eng.shaders[shaderID]
 			switch s := shader.Select().(type) {
 			case *cpuShader:
-				panic("XXX no support for CPU shaders")
+				// Same consideration as above about running the CPU shader synchronously.
+				var n_wg uint32
+				b := bindMap.getCPUBuf(proxy.ID).(cpu.CPUBuffer)
+				indirect := safeish.SliceCast[[]uint32](b)
+				n_wg = indirect[0]
+				resources := transientMap.createCPUResources(arena, &bindMap, bindings)
+				s.shader(n_wg, resources)
 			case *wgpuShader:
 				bindGroup := transientMap.createBindGroup(
 					arena,
@@ -527,10 +563,10 @@ func (eng *Engine) RunRecording(
 			if buf, ok := bindMap.getBuf(proxy); ok {
 				b := &buf.Buffer
 				switch b.kind {
-				case materializedBufferKindBuffer:
-					encoder.ClearBuffer(b.buffer, offset, uint64(size))
-				case materializedBufferKindBytes:
-					slice := b.bytes[offset:]
+				case materializedBufferKindGPU:
+					encoder.ClearBuffer(b.gpu, offset, uint64(size))
+				case materializedBufferKindCPU:
+					slice := b.cpu[offset:]
 					if size >= 0 {
 						slice = slice[:size]
 					}
@@ -563,8 +599,8 @@ func (eng *Engine) RunRecording(
 		if ok {
 			bindMap.bufMap.Delete(id)
 			delete(eng.resident.bufMap, id)
-			if buf.Buffer.kind == materializedBufferKindBuffer {
-				gpuBuf := buf.Buffer.buffer
+			if buf.Buffer.kind == materializedBufferKindGPU {
+				gpuBuf := buf.Buffer.gpu
 				props := bufferProperties{
 					size:   gpuBuf.Size(),
 					usages: gpuBuf.Usage(),
@@ -643,10 +679,10 @@ func (eng *Engine) createComputePipeline(
 }
 
 func (m *bindMap) insertBuf(arena *mem.Arena, proxy renderer.BufferProxy, buffer *wgpu.Buffer) {
-	m.bufMap.Insert(arena, proxy.ID, bindMapBuffer{
-		Buffer: materializedBuffer{kind: materializedBufferKindBuffer, buffer: buffer},
+	m.bufMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapBuffer{
+		Buffer: materializedBuffer{kind: materializedBufferKindGPU, gpu: buffer},
 		Label:  proxy.Name,
-	})
+	}))
 }
 
 func (m *bindMap) getGPUBuf(id renderer.ResourceID) (*wgpu.Buffer, bool) {
@@ -654,28 +690,29 @@ func (m *bindMap) getGPUBuf(id renderer.ResourceID) (*wgpu.Buffer, bool) {
 	if !ok {
 		return nil, false
 	}
-	if mbuf.Buffer.kind != materializedBufferKindBuffer {
+	if mbuf.Buffer.kind != materializedBufferKindGPU {
 		return nil, false
 	}
-	buf := mbuf.Buffer.buffer
+	buf := mbuf.Buffer.gpu
 	return buf, true
 }
 
-func (m *bindMap) getCPUBuf(id renderer.ResourceID) cpuBinding {
+func (m *bindMap) getCPUBuf(id renderer.ResourceID) cpu.CPUBinding {
 	b, ok := m.bufMap.Get(id)
-	if !ok || b.Buffer.kind != materializedBufferKindBytes {
+	if !ok || b.Buffer.kind != materializedBufferKindCPU {
 		panic("getting CPU buffer, but it's on GPU")
 	}
-	return cpuBufferRW(b.Buffer.bytes)
+	return cpu.CPUBuffer(b.Buffer.cpu)
 }
 
 func (m *bindMap) materializeCPUBuf(arena *mem.Arena, proxy renderer.BufferProxy) {
 	if _, ok := m.bufMap.Get(proxy.ID); !ok {
+		// OPT(dh): can/should we use an arena here?
 		buffer := make([]byte, proxy.Size)
-		m.bufMap.Insert(arena, proxy.ID, bindMapBuffer{
-			Buffer: materializedBuffer{kind: materializedBufferKindBytes, bytes: buffer},
+		m.bufMap.Insert(arena, proxy.ID, mem.Make(arena, bindMapBuffer{
+			Buffer: materializedBuffer{kind: materializedBufferKindCPU, cpu: buffer},
 			Label:  proxy.Name,
-		})
+		}))
 	}
 }
 
@@ -683,7 +720,7 @@ func (m *bindMap) insertImage(arena *mem.Arena, id renderer.ResourceID, image *w
 	m.imageMap.Insert(arena, id, bindMapImage{image, imageView})
 }
 
-func (m *bindMap) getBuf(proxy renderer.BufferProxy) (bindMapBuffer, bool) {
+func (m *bindMap) getBuf(proxy renderer.BufferProxy) (*bindMapBuffer, bool) {
 	b, ok := m.bufMap.Get(proxy.ID)
 	return b, ok
 }
@@ -770,17 +807,17 @@ func (b *bindMapBuffer) uploadIfNeeded(
 	queue *wgpu.Queue,
 	pool *resourcePool,
 ) {
-	if b.Buffer.kind != materializedBufferKindBytes {
+	if b.Buffer.kind != materializedBufferKindCPU {
 		return
 	}
-	cpuBuf := b.Buffer.bytes
+	cpuBuf := b.Buffer.cpu
 	usage := wgpu.BufferUsageCopySrc |
 		wgpu.BufferUsageCopyDst |
 		wgpu.BufferUsageStorage |
 		wgpu.BufferUsageIndirect
 	buf := pool.getBuf(proxy.Size, proxy.Name, usage, dev)
 	queue.WriteBuffer(buf, 0, cpuBuf)
-	b.Buffer = materializedBuffer{kind: materializedBufferKindBuffer, buffer: buf}
+	b.Buffer = materializedBuffer{kind: materializedBufferKindGPU, gpu: buf}
 }
 
 func newTransientBindMap(arena *mem.Arena, externalResources []ExternalResource) transientBindMap {
@@ -789,7 +826,7 @@ func newTransientBindMap(arena *mem.Arena, externalResources []ExternalResource)
 	for _, res := range externalResources {
 		switch res := res.(type) {
 		case ExternalBuffer:
-			bufs.Insert(arena, res.Proxy.ID, transientBuf{kind: transientBufKindBuffer, buffer: res.Buffer})
+			bufs.Insert(arena, res.Proxy.ID, transientBuf{kind: transientBufKindGPU, gpu: res.Buffer})
 		case ExternalImage:
 			images.Insert(arena, res.Proxy.ID, res.View)
 		}
@@ -879,10 +916,10 @@ func (m *transientBindMap) createBindGroup(
 					bindMap.pendingClears.Delete(proxy.BufferProxy.ID)
 					encoder.ClearBuffer(buf, 0, buf.Size())
 				}
-				bindMap.bufMap.Insert(arena, proxy.BufferProxy.ID, bindMapBuffer{
-					Buffer: materializedBuffer{kind: materializedBufferKindBuffer, buffer: buf},
+				bindMap.bufMap.Insert(arena, proxy.BufferProxy.ID, mem.Make(arena, bindMapBuffer{
+					Buffer: materializedBuffer{kind: materializedBufferKindGPU, gpu: buf},
 					Label:  proxy.Name,
-				})
+				}))
 			}
 		case renderer.ResourceProxyKindImage:
 			doImage(proxy.ImageProxy)
@@ -902,8 +939,8 @@ func (m *transientBindMap) createBindGroup(
 			var buf *wgpu.Buffer
 			b, _ := m.bufs.Get(proxy.BufferProxy.ID)
 			switch b.kind {
-			case transientBufKindBuffer:
-				buf = b.buffer
+			case transientBufKindGPU:
+				buf = b.gpu
 			default:
 				var ok bool
 				buf, ok = bindMap.getGPUBuf(proxy.BufferProxy.ID)
@@ -964,14 +1001,14 @@ func (m *transientBindMap) createCPUResources(
 	arena *mem.Arena,
 	bindMap *bindMap,
 	bindings []renderer.ResourceProxy,
-) []cpuBinding {
+) []cpu.CPUBinding {
 	for _, resource := range bindings {
 		switch resource.Kind {
 		case renderer.ResourceProxyKindBuffer:
 			tbuf, _ := m.bufs.Get(resource.BufferProxy.ID)
 			switch tbuf.kind {
-			case transientBufKindBytes:
-			case transientBufKindBuffer:
+			case transientBufKindCPU:
+			case transientBufKindGPU:
 				panic("buffer was already materialized on GPU")
 			case 0:
 				bindMap.materializeCPUBuf(arena, resource.BufferProxy)
@@ -985,14 +1022,14 @@ func (m *transientBindMap) createCPUResources(
 		}
 	}
 
-	out := make([]cpuBinding, len(bindings))
+	out := make([]cpu.CPUBinding, len(bindings))
 	for i, resource := range bindings {
 		switch resource.Kind {
 		case renderer.ResourceProxyKindBuffer:
 			tbuf, _ := m.bufs.Get(resource.BufferProxy.ID)
 			switch tbuf.kind {
-			case tbuf.kind:
-				out[i] = cpuBuffer(tbuf.bytes)
+			case transientBufKindCPU:
+				out[i] = cpu.CPUBuffer(tbuf.cpu)
 			default:
 				out[i] = bindMap.getCPUBuf(resource.BufferProxy.ID)
 			}

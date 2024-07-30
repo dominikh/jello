@@ -1,0 +1,8 @@
+This package contains Go implementations of the WGSL shaders. They serve as a
+debug aid, not a viable CPU fallback. Currently all shaders with the exception
+of the fine rasterization have been implemented.
+
+This package is a manual rewrite of the Rust implementation of the CPU shaders
+in Vello, which can be found at [1].
+
+[1]: https://github.com/linebender/vello/tree/3ee3bea02164c5a816fe6c16ef4e3a810edb7620/vello_shaders/src/cpu

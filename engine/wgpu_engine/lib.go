@@ -6,6 +6,7 @@ import (
 
 	"honnef.co/go/jello/encoding"
 	"honnef.co/go/jello/engine/wgpu_engine/shaders"
+	"honnef.co/go/jello/engine/wgpu_engine/shaders/cpu"
 	"honnef.co/go/jello/mem"
 	"honnef.co/go/jello/renderer"
 	"honnef.co/go/wgpu"
@@ -26,7 +27,6 @@ var bindTypeMapping = [...]renderer.BindType{
 }
 
 func (engine *Engine) prepareShaders() *renderer.FullShaders {
-	// XXX support CPU shaders
 	var out renderer.FullShaders
 	outV := reflect.ValueOf(&out).Elem()
 	v := reflect.ValueOf(&shaders.Collection)
@@ -44,7 +44,57 @@ func (engine *Engine) prepareShaders() *renderer.FullShaders {
 		if len(shader.WGSL.Code) == 0 {
 			panic(fmt.Sprintf("shader %q has no code", shader.Name))
 		}
-		id := engine.prepareShader(shader.Name, shader.WGSL.Code, bindings, nil)
+
+		// TODO(dh): replace this hard coded switch with something more dynamic
+		var cpus cpuShader
+		switch shader.Name {
+		case "backdrop_dyn":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.Backdrop}
+		case "bbox_clear":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.BboxClear}
+		case "binning":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.Binning}
+		case "clip_leaf":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.ClipLeaf}
+		case "clip_reduce":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.ClipReduce}
+		case "coarse":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.Coarse}
+		case "draw_leaf":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.DrawLeaf}
+		case "draw_reduce":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.DrawReduce}
+		case "fine_area":
+			// No CPU equivalent
+		case "fine_msaa16":
+			// No CPU equivalent
+		case "fine_msaa8":
+			// No CPU equivalent
+		case "flatten":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.Flatten}
+		case "path_count":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.PathCount}
+		case "path_count_setup":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.PathCountSetup}
+		case "path_tiling":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.PathTiling}
+		case "path_tiling_setup":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.PathTilingSetup}
+		case "pathtag_reduce":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.PathTagReduce}
+		case "pathtag_reduce2":
+			cpus = cpuShader{kind: cpuShaderKindSkipped}
+		case "pathtag_scan1":
+			cpus = cpuShader{kind: cpuShaderKindSkipped}
+		case "pathtag_scan_large":
+			cpus = cpuShader{kind: cpuShaderKindSkipped}
+		case "pathtag_scan_small":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.PathTagScan}
+		case "tile_alloc":
+			cpus = cpuShader{kind: cpuShaderKindPresent, shader: cpu.TileAlloc}
+		}
+
+		id := engine.prepareShader(shader.Name, shader.WGSL.Code, bindings, cpus)
 		outField.Set(reflect.ValueOf(id))
 	}
 	return &out

@@ -1,6 +1,12 @@
 package renderer
 
-import "structs"
+import (
+	"math/bits"
+	"structs"
+	"unsafe"
+
+	"honnef.co/go/jello/encoding"
+)
 
 type PathMonoid struct {
 	_ structs.HostLayout
@@ -15,6 +21,32 @@ type PathMonoid struct {
 	StyleIdx uint32
 	// Index of containing path.
 	PathIdx uint32
+}
+
+func NewPathMonoid(tagWord uint32) PathMonoid {
+	var c PathMonoid
+	point_count := tagWord & 0x3030303
+	c.PathSegIdx = uint32(bits.OnesCount32(((point_count * 7) & 0x4040404)))
+	c.TransIdx = uint32(bits.OnesCount32((tagWord & (uint32(encoding.PathTagTransform) * 0x1010101))))
+	n_points := point_count + ((tagWord >> 2) & 0x1010101)
+	a := n_points + (n_points & (((tagWord >> 3) & 0x1010101) * 15))
+	a += a >> 8
+	a += a >> 16
+	c.PathSegOffset = a & 0xff
+	c.PathIdx = uint32(bits.OnesCount32((tagWord & (uint32(encoding.PathTagPath) * 0x1010101))))
+	style_size := int(unsafe.Sizeof(encoding.Style{}) / 4)
+	c.StyleIdx = uint32(bits.OnesCount32((tagWord & (uint32(encoding.PathTagStyle) * 0x1010101))) * style_size)
+	return c
+}
+
+func (m PathMonoid) Combine(other PathMonoid) PathMonoid {
+	return PathMonoid{
+		TransIdx:      m.TransIdx + other.TransIdx,
+		PathSegIdx:    m.PathSegIdx + other.PathSegIdx,
+		PathSegOffset: m.PathSegOffset + other.PathSegOffset,
+		StyleIdx:      m.StyleIdx + other.StyleIdx,
+		PathIdx:       m.PathIdx + other.PathIdx,
+	}
 }
 
 type PathBbox struct {
