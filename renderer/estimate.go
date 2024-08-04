@@ -40,6 +40,15 @@ type BumpEstimator struct {
 	// present and when the bounding box of a shape is partially or wholly outside the viewport.
 	segments uint32
 	lines    estimateLineSoup
+
+	state struct {
+		t                                                    jmath.Transform
+		caps, fillCloseLines                                 uint32
+		joins, lineToLines, curveLines, curveCount, segments uint32
+		offsetFudge                                          float64
+		// Track the path state to correctly count empty paths and close joins.
+		firstPt, lastPt option[curve.Point]
+	}
 }
 
 func (be *BumpEstimator) Reset() {
@@ -53,113 +62,120 @@ func (be *BumpEstimator) Append(other *BumpEstimator, transform *jmath.Transform
 	be.lines.add(&other.lines, scale)
 }
 
-func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t jmath.Transform, stroke *curve.Stroke) {
-	caps := uint32(1)
-	fillCloseLines := uint32(1)
-	var joins, lineToLines, curveLines, curveCount, segments uint32
+func (est *BumpEstimator) processPathElement(el curve.PathElement) bool {
+	s := &est.state
+	t := s.t
+	switch el.Kind {
+	case curve.MoveToKind:
+		s.firstPt.set(el.P0)
+		if !s.lastPt.isSet {
+			return true
+		}
+		s.caps += 1
+		if s.joins > 0 {
+			s.joins--
+		}
+		s.fillCloseLines += 1
+		s.segments += countSegmentsForLine(s.firstPt.unwrap(), s.lastPt.unwrap(), t)
+		s.lastPt.clear()
+	case curve.ClosePathKind:
+		if s.lastPt.isSet {
+			s.joins += 1
+			s.lineToLines += 1
+			s.segments += countSegmentsForLine(s.firstPt.unwrap(), s.lastPt.unwrap(), t)
+		}
+		s.lastPt = s.firstPt
+	case curve.LineToKind:
+		s.lastPt.set(el.P0)
+		s.joins += 1
+		s.lineToLines += 1
+		s.segments += countSegmentsForLine(s.firstPt.unwrap(), s.lastPt.unwrap(), t)
+	case curve.QuadToKind:
+		var p0 curve.Vec2
+		if s.lastPt.isSet {
+			p0 = curve.Vec2(s.lastPt.value)
+		} else if s.firstPt.isSet {
+			p0 = curve.Vec2(s.firstPt.value)
+		} else {
+			return true
+		}
+		s.lastPt.set(el.P1)
 
-	// Track the path state to correctly count empty paths and close joins.
-	var firstPt, lastPt option[curve.Point]
+		p1 := curve.Vec2(el.P0)
+		p2 := curve.Vec2(el.P1)
+		lines := s.offsetFudge * wangQuadratic(rsqrtOfTol, p0, p1, p2, t)
+
+		s.curveLines += uint32(math.Ceil(lines))
+		s.curveCount++
+		s.joins++
+
+		segs := s.offsetFudge * countSegmentsForQuadratic(p0, p1, p2, t)
+		s.segments += uint32(max(math.Ceil(segs), math.Ceil(lines)))
+	case curve.CubicToKind:
+		var p0 curve.Vec2
+		if s.lastPt.isSet {
+			p0 = curve.Vec2(s.lastPt.value)
+		} else if s.firstPt.isSet {
+			p0 = curve.Vec2(s.firstPt.value)
+		} else {
+			return true
+		}
+		s.lastPt.set(el.P2)
+
+		p1 := curve.Vec2(el.P0)
+		p2 := curve.Vec2(el.P1)
+		p3 := curve.Vec2(el.P2)
+		lines := s.offsetFudge * wangCubic(rsqrtOfTol, p0, p1, p2, p3, t)
+
+		s.curveLines += uint32(math.Ceil(lines))
+		s.curveCount += 1
+		s.joins += 1
+		segs := countSegmentsForCubic(p0, p1, p2, p3, t)
+		s.segments += uint32(max(math.Ceil(segs), math.Ceil(lines)))
+	}
+	return true
+}
+
+func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t jmath.Transform, stroke *curve.Stroke) {
+	est.state.caps = uint32(1)
+	est.state.fillCloseLines = uint32(1)
+
 	scale := transformScale(&t)
 	var scaledWidth float64
 	if stroke != nil {
 		scaledWidth = stroke.Width * scale
 	}
-	offsetFudge := max(1, math.Sqrt(scaledWidth))
-	for el := range path {
-		switch el.Kind {
-		case curve.MoveToKind:
-			firstPt.set(el.P0)
-			if !lastPt.isSet {
-				continue
-			}
-			caps += 1
-			if joins > 0 {
-				joins--
-			}
-			fillCloseLines += 1
-			segments += countSegmentsForLine(firstPt.unwrap(), lastPt.unwrap(), t)
-			lastPt.clear()
-		case curve.ClosePathKind:
-			if lastPt.isSet {
-				joins += 1
-				lineToLines += 1
-				segments += countSegmentsForLine(firstPt.unwrap(), lastPt.unwrap(), t)
-			}
-			lastPt = firstPt
-		case curve.LineToKind:
-			lastPt.set(el.P0)
-			joins += 1
-			lineToLines += 1
-			segments += countSegmentsForLine(firstPt.unwrap(), lastPt.unwrap(), t)
-		case curve.QuadToKind:
-			var p0 curve.Vec2
-			if lastPt.isSet {
-				p0 = curve.Vec2(lastPt.value)
-			} else if firstPt.isSet {
-				p0 = curve.Vec2(firstPt.value)
-			} else {
-				continue
-			}
-			lastPt.set(el.P1)
-
-			p1 := curve.Vec2(el.P0)
-			p2 := curve.Vec2(el.P1)
-			lines := offsetFudge * wangQuadratic(rsqrtOfTol, p0, p1, p2, t)
-
-			curveLines += uint32(math.Ceil(lines))
-			curveCount++
-			joins++
-
-			segs := offsetFudge * countSegmentsForQuadratic(p0, p1, p2, t)
-			segments += uint32(max(math.Ceil(segs), math.Ceil(lines)))
-		case curve.CubicToKind:
-			var p0 curve.Vec2
-			if lastPt.isSet {
-				p0 = curve.Vec2(lastPt.value)
-			} else if firstPt.isSet {
-				p0 = curve.Vec2(firstPt.value)
-			} else {
-				continue
-			}
-			lastPt.set(el.P2)
-
-			p1 := curve.Vec2(el.P0)
-			p2 := curve.Vec2(el.P1)
-			p3 := curve.Vec2(el.P2)
-			lines := offsetFudge * wangCubic(rsqrtOfTol, p0, p1, p2, p3, t)
-
-			curveLines += uint32(math.Ceil(lines))
-			curveCount += 1
-			joins += 1
-			segs := countSegmentsForCubic(p0, p1, p2, p3, t)
-			segments += uint32(max(math.Ceil(segs), math.Ceil(lines)))
-		}
-	}
+	est.state.offsetFudge = max(1, math.Sqrt(scaledWidth))
+	// We don't use 'range' and local variables because the closure can't get
+	// inlined and all the local variables would escape to the heap. We could
+	// still use 'range' and est.state in the loop body, but calling the
+	// iterator directly makes it clearer what's going on.
+	//
+	// OPT(dh): this still allocates for the method value
+	path(est.processPathElement)
 
 	if stroke == nil {
-		est.lines.linetos += lineToLines + fillCloseLines
-		est.lines.curves += curveLines
-		est.lines.curveCount += curveCount
-		est.segments += segments
+		est.lines.linetos += est.state.lineToLines + est.state.fillCloseLines
+		est.lines.curves += est.state.curveLines
+		est.lines.curveCount += est.state.curveCount
+		est.segments += est.state.segments
 
 		// Account for the implicit close
-		if firstPt.isSet && lastPt.isSet {
-			est.segments += countSegmentsForLine(firstPt.value, lastPt.value, t)
+		if est.state.firstPt.isSet && est.state.lastPt.isSet {
+			est.segments += countSegmentsForLine(est.state.firstPt.value, est.state.lastPt.value, t)
 		}
 		return
 	}
-	style := *stroke
 
 	// For strokes, double-count the lines to estimate offset curves.
-	est.lines.linetos += 2 * lineToLines
-	est.lines.curves += 2 * curveLines
-	est.lines.curveCount += 2 * curveCount
-	est.segments += 2 * segments
+	est.lines.linetos += 2 * est.state.lineToLines
+	est.lines.curves += 2 * est.state.curveLines
+	est.lines.curveCount += 2 * est.state.curveCount
+	est.segments += 2 * est.state.segments
 
-	est.countStrokeCaps(style.StartCap, scaledWidth, caps)
-	est.countStrokeCaps(style.EndCap, scaledWidth, caps)
-	est.countStrokeJoins(style.Join, scaledWidth, style.MiterLimit, joins)
+	est.countStrokeCaps(stroke.StartCap, scaledWidth, est.state.caps)
+	est.countStrokeCaps(stroke.EndCap, scaledWidth, est.state.caps)
+	est.countStrokeJoins(stroke.Join, scaledWidth, stroke.MiterLimit, est.state.joins)
 }
 
 // Tally produces the final total, applying an optional transform to all content.
