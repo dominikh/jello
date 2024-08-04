@@ -282,6 +282,9 @@ func align(v int, to uint8) int {
 }
 
 func (a *Arena) Reset() {
+	if a.typedSlabs == nil {
+		a.typedSlabs = make(map[reflect.Type][]slab)
+	}
 	for i := range a.byteSlabs {
 		a.byteSlabs[i].offset = 0
 	}
