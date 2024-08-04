@@ -326,7 +326,7 @@ func (eng *Engine) RunRecording(
 	externalResources []ExternalResource,
 	label string,
 	pgroup *ProfilerGroup,
-) {
+) *wgpu.CommandBuffer {
 	pgroup = pgroup.Nest("RunRecording")
 	defer pgroup.End()
 
@@ -593,10 +593,8 @@ func (eng *Engine) RunRecording(
 		}
 	}
 
-	cmd := encoder.Finish(nil)
+	cmds := encoder.Finish(nil)
 	encoder.Release()
-	queue.Submit(mem.Varargs(arena, cmd)...)
-	cmd.Release()
 
 	for id := range freeBufs.Keys() {
 		buf, ok := bindMap.bufMap.Get(id)
@@ -638,6 +636,8 @@ func (eng *Engine) RunRecording(
 	for k, v := range bindMap.imageMap.All() {
 		eng.resident.imageMap[k] = v
 	}
+
+	return cmds
 }
 
 func (eng *Engine) getDownload(buf renderer.BufferProxy) (*wgpu.Buffer, bool) {

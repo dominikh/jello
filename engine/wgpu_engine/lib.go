@@ -244,7 +244,7 @@ func (eng *Engine) RenderToTexture(
 	texture *wgpu.TextureView,
 	params *renderer.RenderParams,
 	pgroup *ProfilerGroup,
-) {
+) *wgpu.CommandBuffer {
 	pgroup = pgroup.Nest("RenderToTexture")
 	defer pgroup.End()
 
@@ -256,7 +256,7 @@ func (eng *Engine) RenderToTexture(
 			View:  texture,
 		},
 	}
-	eng.RunRecording(arena, queue, recording, externalResources, "render_to_texture", pgroup)
+	return eng.RunRecording(arena, queue, recording, externalResources, "render_to_texture", pgroup)
 }
 
 func (eng *Engine) RenderToSurface(
@@ -281,11 +281,11 @@ func (eng *Engine) RenderToSurface(
 
 	ency := eng.Device.CreateCommandEncoder(nil)
 	span := pgroup.Begin(ency, "total")
-	cmdy := ency.Finish(nil)
-	defer cmdy.Release()
-	queue.Submit(mem.Varargs(arena, cmdy)...)
+	profileCmds := ency.Finish(nil)
+	defer profileCmds.Release()
 
-	eng.RenderToTexture(arena, queue, enc, eng.target.View, params, pgroup)
+	renderCmds := eng.RenderToTexture(arena, queue, enc, eng.target.View, params, pgroup)
+	defer renderCmds.Release()
 
 	surfaceView := surface.Texture.CreateView(nil)
 	defer surfaceView.Release()
@@ -322,8 +322,8 @@ func (eng *Engine) RenderToSurface(
 	renderPass.End()
 
 	span.End(encoder)
-	cmd := encoder.Finish(nil)
-	defer cmd.Release()
-	queue.Submit(mem.Varargs(arena, cmd)...)
+	blitCmds := encoder.Finish(nil)
+	defer blitCmds.Release()
+	queue.Submit(mem.Varargs(arena, profileCmds, renderCmds, blitCmds)...)
 
 }
