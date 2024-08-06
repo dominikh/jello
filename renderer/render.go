@@ -140,6 +140,14 @@ func (rd *Renderer) RenderEncodingCoarse(
 	bufferSizes := &cpuConfig.bufferSizes
 	wgCounts := &cpuConfig.workgroupCounts
 
+	if len(packed) == 0 {
+		// HACK: wgpu doesn't allow empty buffers, so we make sure that the scene buffer we upload
+		// can contain at least one array item.
+		// The values passed here should never be read, because the scene size in config
+		// is zero.
+		packed = append(packed, 0, 0, 0, 0)
+	}
+
 	sceneBuf := recording.Upload(arena, "scene", packed)
 	configBuf := recording.UploadUniform(arena, "config", safeish.AsBytes(&cpuConfig.gpu))
 	infoBinDataBuf := NewBufferProxy(
