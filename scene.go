@@ -190,3 +190,13 @@ func (s *Scene) Append(other *Scene, transform curve.Affine) {
 	s.encoding.Append(&other.encoding, t)
 	s.estimator.Append(&other.estimator, &t)
 }
+
+// ApplyTransform applies an affine transformation to everything that has
+// already been drawn in the scene. It does not affect future drawing
+// operations.
+//
+// This can be used, for example, to apply HiDPI scaling.
+func (s *Scene) ApplyTransform(transform curve.Affine) {
+	t := jmath.TransformFromKurbo(transform)
+	s.encoding.ApplyTransform(t)
+}

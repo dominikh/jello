@@ -115,6 +115,12 @@ func (enc *Encoding) StreamOffsets() StreamOffsets {
 	}
 }
 
+func (enc *Encoding) ApplyTransform(transform jmath.Transform) {
+	for i := range enc.Transforms {
+		enc.Transforms[i] = transform.Mul(enc.Transforms[i])
+	}
+}
+
 func (enc *Encoding) EncodeFillStyle(fill gfx.Fill) {
 	enc.EncodeStyle(styleFromFill(fill))
 }
