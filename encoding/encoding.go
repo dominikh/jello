@@ -48,6 +48,7 @@ func (enc *Encoding) Reset() {
 	enc.DrawData = enc.DrawData[:0]
 	enc.Transforms = enc.Transforms[:0]
 	enc.Styles = enc.Styles[:0]
+	enc.Resources.Reset()
 	enc.NumPaths = 0
 	enc.NumPathSegments = 0
 	enc.NumClips = 0
@@ -393,6 +394,11 @@ type Resources struct {
 	Patches    []Patch
 	ColorStops []gfx.ColorStop
 	// XXX glyph stuff
+}
+
+func (r *Resources) Reset() {
+	r.Patches = r.Patches[:0]
+	r.ColorStops = r.ColorStops[:0]
 }
 
 // XXX the following types are in encoding/resolver.rs, but we put the resolver in renderer instead
