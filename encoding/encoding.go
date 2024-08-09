@@ -7,7 +7,6 @@ package encoding
 import (
 	"encoding/binary"
 	"fmt"
-	"iter"
 	"math"
 	"slices"
 
@@ -149,19 +148,15 @@ func (enc *Encoding) EncodeTransform(transform jmath.Transform) bool {
 	}
 }
 
-func (enc *Encoding) EncodePath(isFill bool) *pathEncoder {
-	return &pathEncoder{
+func (enc *Encoding) EncodePath(path curve.BezPath, isFill bool) bool {
+	pe := &pathEncoder{
 		tags:        &enc.PathTags,
 		data:        &enc.PathData,
 		numSegments: &enc.NumPathSegments,
 		numPaths:    &enc.NumPaths,
 		isFill:      isFill,
 	}
-}
-
-func (enc *Encoding) EncodePathElements(path iter.Seq[curve.PathElement], isFill bool) bool {
-	pe := enc.EncodePath(isFill)
-	pe.PathElements(path)
+	pe.Path(path)
 	return pe.Finish(true) != 0
 }
 

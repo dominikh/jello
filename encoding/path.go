@@ -6,7 +6,6 @@ package encoding
 
 import (
 	"encoding/binary"
-	"iter"
 	"math"
 	"structs"
 
@@ -405,8 +404,8 @@ func (enc *pathEncoder) Close() {
 	enc.state = pathStateStart
 }
 
-func (enc *pathEncoder) PathElements(path iter.Seq[curve.PathElement]) {
-	for el := range path {
+func (enc *pathEncoder) Path(path curve.BezPath) {
+	for _, el := range path {
 		switch el.Kind {
 		case curve.MoveToKind:
 			enc.MoveTo(float32(el.P0.X), float32(el.P0.Y))

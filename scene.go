@@ -6,7 +6,6 @@ package jello
 
 import (
 	"fmt"
-	"iter"
 	"slices"
 
 	"honnef.co/go/curve"
@@ -47,12 +46,12 @@ func (s *Scene) PushLayer(
 	blend gfx.BlendMode,
 	alpha float32,
 	clipTransform curve.Affine,
-	clip iter.Seq[curve.PathElement],
+	clip curve.BezPath,
 ) {
 	if debugTrace {
 		fmt.Println("{")
 		fmt.Println("\tvar clip curve.BezPath")
-		for el := range clip {
+		for _, el := range clip {
 			fmt.Printf("\tclip.Push(%#v)\n", el)
 		}
 		fmt.Printf("\ts.PushLayer(%#v, %g, %#v, clip.Elements())\n", blend, alpha, clipTransform)
@@ -63,10 +62,10 @@ func (s *Scene) PushLayer(
 	t := jmath.TransformFromKurbo(clipTransform)
 	s.encoding.EncodeTransform(t)
 	s.encoding.EncodeFillStyle(gfx.NonZero)
-	if !s.encoding.EncodePathElements(clip, true) {
+	if !s.encoding.EncodePath(clip, true) {
 		// If the layer shape is invalid, encode a valid empty path. This suppresses
 		// all drawing until the layer is popped.
-		s.encoding.EncodePathElements(curve.Rect{}.PathElements(0.1), true)
+		s.encoding.EncodePath(slices.Collect(curve.Rect{}.PathElements(0.1)), true)
 	} else {
 		s.estimator.CountPath(clip, t, nil)
 	}
@@ -87,7 +86,7 @@ func (s *Scene) Fill(
 	transform curve.Affine,
 	brush gfx.Brush,
 	brushTransform curve.Affine,
-	path iter.Seq[curve.PathElement],
+	path curve.BezPath,
 ) {
 	if debugTrace {
 		fmt.Println("{")
@@ -103,7 +102,7 @@ func (s *Scene) Fill(
 	t := jmath.TransformFromKurbo(transform)
 	s.encoding.EncodeTransform(t)
 	s.encoding.EncodeFillStyle(style)
-	if s.encoding.EncodePathElements(path, true) {
+	if s.encoding.EncodePath(path, true) {
 		if brushTransform != curve.Identity {
 			if s.encoding.EncodeTransform(jmath.TransformFromKurbo(transform.Mul(brushTransform))) {
 				s.encoding.SwapLastPathTags()
@@ -119,7 +118,7 @@ func (s *Scene) Stroke(
 	transform curve.Affine,
 	b gfx.Brush,
 	brushTransform curve.Affine,
-	shape iter.Seq[curve.PathElement],
+	shape curve.BezPath,
 ) {
 	// The setting for tolerance are a compromise. For most applications,
 	// shape tolerance doesn't matter, as the input is likely Bézier paths,
@@ -147,7 +146,7 @@ func (s *Scene) Stroke(
 		var encodeResult bool
 		if len(style.DashPattern) == 0 {
 			s.estimator.CountPath(shape, t, &style)
-			encodeResult = s.encoding.EncodePathElements(shape, false)
+			encodeResult = s.encoding.EncodePath(shape, false)
 		} else {
 			// TODO: We currently collect the output of the dash iterator because
 			// `encode_path_elements` wants to consume the iterator. We want to avoid calling
@@ -155,14 +154,14 @@ func (s *Scene) Stroke(
 			// Bump estimation will move to resolve time rather than scene construction time,
 			// so we can revert this back to not collecting when that happens.
 			dashed := slices.Collect(curve.Dash(
-				shape,
+				slices.Values(shape),
 				style.DashOffset,
 				style.DashPattern,
 			))
 			// We turn the iterator into a slice and then turn it into an
 			// iterator again to avoid doing the curve.Dash work twice.
-			s.estimator.CountPath(slices.Values(dashed), t, &style)
-			encodeResult = s.encoding.EncodePathElements(slices.Values(dashed), false)
+			s.estimator.CountPath(dashed, t, &style)
+			encodeResult = s.encoding.EncodePath(dashed, false)
 		}
 		if encodeResult {
 			if brushTransform != curve.Identity {
@@ -174,12 +173,12 @@ func (s *Scene) Stroke(
 		}
 	} else {
 		stroked := curve.StrokePath(
-			shape,
+			slices.Values(shape),
 			style,
 			curve.StrokeOpts{},
 			strokeTolerance,
 		)
-		s.Fill(gfx.NonZero, transform, b, brushTransform, stroked.Elements())
+		s.Fill(gfx.NonZero, transform, b, brushTransform, stroked)
 	}
 }
 

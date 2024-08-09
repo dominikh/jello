@@ -5,7 +5,6 @@
 package renderer
 
 import (
-	"iter"
 	"math"
 
 	"honnef.co/go/curve"
@@ -62,81 +61,7 @@ func (be *BumpEstimator) Append(other *BumpEstimator, transform *jmath.Transform
 	be.lines.add(&other.lines, scale)
 }
 
-func (est *BumpEstimator) processPathElement(el curve.PathElement) bool {
-	s := &est.state
-	t := s.t
-	switch el.Kind {
-	case curve.MoveToKind:
-		s.firstPt.set(el.P0)
-		if !s.lastPt.isSet {
-			return true
-		}
-		s.caps += 1
-		if s.joins > 0 {
-			s.joins--
-		}
-		s.fillCloseLines += 1
-		s.segments += countSegmentsForLine(s.firstPt.unwrap(), s.lastPt.unwrap(), t)
-		s.lastPt.clear()
-	case curve.ClosePathKind:
-		if s.lastPt.isSet {
-			s.joins += 1
-			s.lineToLines += 1
-			s.segments += countSegmentsForLine(s.firstPt.unwrap(), s.lastPt.unwrap(), t)
-		}
-		s.lastPt = s.firstPt
-	case curve.LineToKind:
-		s.lastPt.set(el.P0)
-		s.joins += 1
-		s.lineToLines += 1
-		s.segments += countSegmentsForLine(s.firstPt.unwrap(), s.lastPt.unwrap(), t)
-	case curve.QuadToKind:
-		var p0 curve.Vec2
-		if s.lastPt.isSet {
-			p0 = curve.Vec2(s.lastPt.value)
-		} else if s.firstPt.isSet {
-			p0 = curve.Vec2(s.firstPt.value)
-		} else {
-			return true
-		}
-		s.lastPt.set(el.P1)
-
-		p1 := curve.Vec2(el.P0)
-		p2 := curve.Vec2(el.P1)
-		lines := s.offsetFudge * wangQuadratic(rsqrtOfTol, p0, p1, p2, t)
-
-		s.curveLines += uint32(math.Ceil(lines))
-		s.curveCount++
-		s.joins++
-
-		segs := s.offsetFudge * countSegmentsForQuadratic(p0, p1, p2, t)
-		s.segments += uint32(max(math.Ceil(segs), math.Ceil(lines)))
-	case curve.CubicToKind:
-		var p0 curve.Vec2
-		if s.lastPt.isSet {
-			p0 = curve.Vec2(s.lastPt.value)
-		} else if s.firstPt.isSet {
-			p0 = curve.Vec2(s.firstPt.value)
-		} else {
-			return true
-		}
-		s.lastPt.set(el.P2)
-
-		p1 := curve.Vec2(el.P0)
-		p2 := curve.Vec2(el.P1)
-		p3 := curve.Vec2(el.P2)
-		lines := s.offsetFudge * wangCubic(rsqrtOfTol, p0, p1, p2, p3, t)
-
-		s.curveLines += uint32(math.Ceil(lines))
-		s.curveCount += 1
-		s.joins += 1
-		segs := countSegmentsForCubic(p0, p1, p2, p3, t)
-		s.segments += uint32(max(math.Ceil(segs), math.Ceil(lines)))
-	}
-	return true
-}
-
-func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t jmath.Transform, stroke *curve.Stroke) {
+func (est *BumpEstimator) CountPath(path curve.BezPath, t jmath.Transform, stroke *curve.Stroke) {
 	est.state.caps = uint32(1)
 	est.state.fillCloseLines = uint32(1)
 
@@ -152,7 +77,73 @@ func (est *BumpEstimator) CountPath(path iter.Seq[curve.PathElement], t jmath.Tr
 	// iterator directly makes it clearer what's going on.
 	//
 	// OPT(dh): this still allocates for the method value
-	path(est.processPathElement)
+	for _, el := range path {
+		s := &est.state
+		t := s.t
+		switch el.Kind {
+		case curve.MoveToKind:
+			s.firstPt.set(el.P0)
+			if !s.lastPt.isSet {
+				continue
+			}
+			s.caps += 1
+			if s.joins > 0 {
+				s.joins--
+			}
+			s.fillCloseLines += 1
+			s.segments += countSegmentsForLine(s.firstPt.unwrap(), s.lastPt.unwrap(), t)
+			s.lastPt.clear()
+		case curve.ClosePathKind:
+			if s.lastPt.isSet {
+				s.joins += 1
+				s.lineToLines += 1
+				s.segments += countSegmentsForLine(s.firstPt.unwrap(), s.lastPt.unwrap(), t)
+			}
+			s.lastPt = s.firstPt
+		case curve.LineToKind:
+			s.lastPt.set(el.P0)
+			s.joins += 1
+			s.lineToLines += 1
+			s.segments += countSegmentsForLine(s.firstPt.unwrap(), s.lastPt.unwrap(), t)
+		case curve.QuadToKind:
+			var p0 curve.Vec2
+			if s.lastPt.isSet {
+				p0 = curve.Vec2(s.lastPt.value)
+			} else if s.firstPt.isSet {
+				p0 = curve.Vec2(s.firstPt.value)
+			} else {
+				continue
+			}
+			s.lastPt.set(el.P1)
+			p1 := curve.Vec2(el.P0)
+			p2 := curve.Vec2(el.P1)
+			lines := s.offsetFudge * wangQuadratic(rsqrtOfTol, p0, p1, p2, t)
+			s.curveLines += uint32(math.Ceil(lines))
+			s.curveCount++
+			s.joins++
+			segs := s.offsetFudge * countSegmentsForQuadratic(p0, p1, p2, t)
+			s.segments += uint32(max(math.Ceil(segs), math.Ceil(lines)))
+		case curve.CubicToKind:
+			var p0 curve.Vec2
+			if s.lastPt.isSet {
+				p0 = curve.Vec2(s.lastPt.value)
+			} else if s.firstPt.isSet {
+				p0 = curve.Vec2(s.firstPt.value)
+			} else {
+				continue
+			}
+			s.lastPt.set(el.P2)
+			p1 := curve.Vec2(el.P0)
+			p2 := curve.Vec2(el.P1)
+			p3 := curve.Vec2(el.P2)
+			lines := s.offsetFudge * wangCubic(rsqrtOfTol, p0, p1, p2, p3, t)
+			s.curveLines += uint32(math.Ceil(lines))
+			s.curveCount += 1
+			s.joins += 1
+			segs := countSegmentsForCubic(p0, p1, p2, p3, t)
+			s.segments += uint32(max(math.Ceil(segs), math.Ceil(lines)))
+		}
+	}
 
 	if stroke == nil {
 		est.lines.linetos += est.state.lineToLines + est.state.fillCloseLines
