@@ -174,7 +174,7 @@ func (r *Resolver) Resolve(arena *mem.Arena, enc *encoding.Encoding) (Layout, Ra
 	// XXX glyph stuff
 	layout.NumDrawObjects = layout.NumPaths
 	if sbs.bufferSize != len(data) {
-		panic("internal error: buffer size mismatch")
+		panic(fmt.Sprintf("internal error: buffer size mismatch (%d != %d)", sbs.bufferSize, len(data)))
 	}
 	return layout, r.rampCache.ramps(), imgs, data
 }
