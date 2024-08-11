@@ -489,10 +489,10 @@ func ClipReduce(arena *mem.Arena, numWgs uint32, resources []CPUBinding) {
 				isPush = 1
 			}
 			bic := renderer.ClipBic{A: 1 - isPush, B: isPush}
-			bicReduced = bic.Combine(bicReduced)
 			if isPush != 0 && bicReduced.A == 0 {
 				scratch = mem.Append(arena, scratch, globalIdx)
 			}
+			bicReduced = bic.Combine(bicReduced)
 		}
 		reduced[wgIdx] = bicReduced
 		for i := len(scratch) - 1; i >= 0; i-- {
