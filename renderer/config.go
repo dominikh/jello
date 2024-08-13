@@ -45,6 +45,9 @@ type ConfigUniform struct {
 	SegCountsSize uint32
 	// Size of segment buffer allocation (in [`PathSegment`]s).
 	SegmentsSize uint32
+	// Size of blend spill buffer (in `u32` pixels)
+	// TODO: Maybe store in TILE_WIDTH * TILE_HEIGHT blocks of pixels instead?
+	BlendSize uint32
 	// Size of per-tile command list buffer allocation (in `uint32`s).
 	PtclSize uint32
 }
@@ -107,6 +110,7 @@ func NewRenderConfig(arena *mem.Arena, layout *Layout, width, height uint32, bas
 			TilesSize:     uint32(bufferSizes.Tiles),
 			SegCountsSize: uint32(bufferSizes.SegCounts),
 			SegmentsSize:  uint32(bufferSizes.Segments),
+			BlendSize:     uint32(bufferSizes.BlendSpill),
 			PtclSize:      uint32(bufferSizes.Ptcl),
 			Layout:        *layout,
 		},
@@ -140,6 +144,8 @@ func NewBufferSizes(layout *Layout, workgroups *WorkgroupCounts) BufferSizes {
 	lines := NewBufferSize[LineSoup](1 << 21)
 	segCounts := NewBufferSize[SegmentCount](1 << 21)
 	segments := NewBufferSize[PathSegment](1 << 21)
+	// 16 * 16 (1 << 8) is one blend spill, so this allows for 4096 spills.
+	blendSpill := NewBufferSize[uint32](1 << 20)
 	ptcl := NewBufferSize[uint32](1 << 23)
 	return BufferSizes{
 		PathReduced:     NewBufferSize[PathMonoid](reducedSize),
@@ -160,12 +166,13 @@ func NewBufferSizes(layout *Layout, workgroups *WorkgroupCounts) BufferSizes {
 		BinHeaders:      NewBufferSize[BinHeader](binningWgs * 256),
 		Paths:           NewBufferSize[Path](numPathsALigned),
 
-		Lines:     lines,
-		BinData:   binData,
-		Tiles:     tiles,
-		SegCounts: segCounts,
-		Segments:  segments,
-		Ptcl:      ptcl,
+		Lines:      lines,
+		BinData:    binData,
+		Tiles:      tiles,
+		SegCounts:  segCounts,
+		Segments:   segments,
+		BlendSpill: blendSpill,
+		Ptcl:       ptcl,
 	}
 }
 
@@ -257,12 +264,13 @@ type BufferSizes struct {
 	BinHeaders      BufferSize[BinHeader]
 	Paths           BufferSize[Path]
 	// Bump allocated buffers
-	Lines     BufferSize[LineSoup]
-	BinData   BufferSize[uint32]
-	Tiles     BufferSize[Tile]
-	SegCounts BufferSize[SegmentCount]
-	Segments  BufferSize[PathSegment]
-	Ptcl      BufferSize[uint32]
+	Lines      BufferSize[LineSoup]
+	BinData    BufferSize[uint32]
+	Tiles      BufferSize[Tile]
+	SegCounts  BufferSize[SegmentCount]
+	Segments   BufferSize[PathSegment]
+	BlendSpill BufferSize[uint32]
+	Ptcl       BufferSize[uint32]
 }
 
 type WorkgroupCounts struct {

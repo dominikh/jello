@@ -73,6 +73,7 @@ type fineResources struct {
 	gradientImage  ResourceProxy
 	infoBinDataBuf ResourceProxy
 	images         []ImageProxy
+	blendSpillBuf  ResourceProxy
 
 	outImage ImageProxy
 }
@@ -434,6 +435,7 @@ func (rd *Renderer) RenderEncodingCoarse(
 	recording.FreeResource(arena, binHeaderBuf.Resource())
 	recording.FreeResource(arena, pathBuf.Resource())
 	outImage := NewImageProxy(params.Width, params.Height, Rgba8)
+	blendSpillBuf := NewBufferProxy(uint64(bufferSizes.BlendSpill.sizeInBytes()), "blend_spill")
 	r.fineWgCount = wgCounts.Fine
 	r.fineResources = fineResources{
 		aaConfig:       params.AntialiasingMethod,
@@ -444,6 +446,7 @@ func (rd *Renderer) RenderEncodingCoarse(
 		ptclBuf:        ptclBuf.Resource(),
 		gradientImage:  gradientImage.Resource(),
 		infoBinDataBuf: infoBinDataBuf.Resource(),
+		blendSpillBuf:  blendSpillBuf.Resource(),
 		images:         imageProxies,
 		outImage:       outImage,
 	}
@@ -471,6 +474,7 @@ func (rd *Renderer) RecordFine(arena *mem.Arena, r *Render, shaders *FullShaders
 				fine.segmentsBuf,
 				fine.ptclBuf,
 				fine.infoBinDataBuf,
+				fine.blendSpillBuf,
 				fine.outImage.Resource(),
 				fine.gradientImage,
 				{
@@ -515,6 +519,7 @@ func (rd *Renderer) RecordFine(arena *mem.Arena, r *Render, shaders *FullShaders
 				fine.segmentsBuf,
 				fine.ptclBuf,
 				fine.infoBinDataBuf,
+				fine.blendSpillBuf,
 				fine.outImage.Resource(),
 				fine.gradientImage,
 				{
@@ -532,6 +537,7 @@ func (rd *Renderer) RecordFine(arena *mem.Arena, r *Render, shaders *FullShaders
 	recording.FreeResource(arena, fine.ptclBuf)
 	recording.FreeResource(arena, fine.gradientImage)
 	recording.FreeResource(arena, fine.infoBinDataBuf)
+	recording.FreeResource(arena, fine.blendSpillBuf)
 	return recording
 }
 

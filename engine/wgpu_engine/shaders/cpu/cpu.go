@@ -41,6 +41,9 @@ const numTileX = 16
 const numTileY = 16
 const numTile = numTileX * numTileY
 
+// Keep in sync with config.wgsl
+const blendStackSplit = 4
+
 const ptclIncrement = 256
 const ptclHeadroom = 2
 
@@ -1131,6 +1134,8 @@ func Coarse(arena *mem.Arena, _ uint32, resources []CPUBinding) {
 			blendOffset := tileState.cmdOffset
 			tileState.cmdOffset += 1
 			clipDepth := 0
+			renderBlendDepth := 0
+			maxBlendDepth := 0
 			clipZeroDepth := 0
 			for _, drawobjIdx := range compacted[tileIdx] {
 				drawtag := scene[(drawTagBase + drawobjIdx)]
@@ -1216,7 +1221,10 @@ func Coarse(arena *mem.Arena, _ uint32, resources []CPUBinding) {
 								clipZeroDepth = clipDepth + 1
 							} else {
 								tileState.writeBeginClip(config, bump, ptcl)
-								// TODO: update blend depth
+								// TODO: Do we need to track this separately, seems like it
+								// is always the same as clip_depth in this code path
+								renderBlendDepth++
+								maxBlendDepth = max(renderBlendDepth, maxBlendDepth)
 							}
 							clipDepth++
 
@@ -1227,6 +1235,7 @@ func Coarse(arena *mem.Arena, _ uint32, resources []CPUBinding) {
 							blend := scene[dd]
 							alpha := math.Float32frombits(scene[dd+1])
 							tileState.writeEndClip(config, bump, ptcl, blend, alpha)
+							renderBlendDepth--
 
 						default:
 							panic("unreachable")
@@ -1248,7 +1257,7 @@ func Coarse(arena *mem.Arena, _ uint32, resources []CPUBinding) {
 
 			if binTileX+tileX < widthInTiles && binTileY+tileY < heightInTiles {
 				ptcl[tileState.cmdOffset] = cmdEnd
-				scratchSize := uint32(0) // TODO: actually compute blend depth
+				scratchSize := uint32(max((maxBlendDepth-blendStackSplit), 0) * tileWidth * tileHeight)
 				ptcl[blendOffset] = bump.Blend
 				bump.Blend += scratchSize
 			}

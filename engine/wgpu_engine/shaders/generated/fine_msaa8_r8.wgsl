@@ -56,7 +56,7 @@ struct SegmentCount {
 // Copyright 2022 the Vello Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT OR Unlicense
 
-// This must be kept in sync with the struct in src/encoding/resolve.rs
+// This must be kept in sync with `ConfigUniform` in `vello_encoding/src/config.rs`
 struct Config {
     width_in_tiles: u32,
     height_in_tiles: u32,
@@ -93,6 +93,7 @@ struct Config {
     tiles_size: u32,
     seg_counts_size: u32,
     segments_size: u32,
+    blend_size: u32,
     ptcl_size: u32,
 }
 
@@ -109,6 +110,9 @@ const N_TILE = 256u;
 // Not currently supporting non-square tiles
 const TILE_SCALE = 0.0625;
 
+// The "split" point between using local memory in fine for the blend stack and spilling to the blend_spill buffer.
+// A higher value will increase vgpr ("register") pressure in fine, but decrease required dynamic memory allocation.
+// If changing, also change in vello_shaders/src/cpu/coarse.rs.
 const BLEND_STACK_SPLIT = 4u;
 
 // The following are computed in draw_leaf from the generic gradient parameters
@@ -539,17 +543,20 @@ var<storage> ptcl: array<u32>;
 var<storage> info: array<u32>;
 
 @group(0) @binding(4)
-var output: texture_storage_2d<r8unorm, write>;
+var<storage, read_write> blend_spill: array<u32>;
 
 @group(0) @binding(5)
-var gradients: texture_2d<f32>;
+var output: texture_storage_2d<r8unorm, write>;
 
 @group(0) @binding(6)
+var gradients: texture_2d<f32>;
+
+@group(0) @binding(7)
 var images: binding_array<texture_2d<f32>>;
 
 // MSAA-only bindings and utilities
 
-const MASK_LUT_INDEX: u32 = 7;
+const MASK_LUT_INDEX: u32 = 8;
 
 const MASK_WIDTH = 32u;
 const MASK_HEIGHT = 32u;
@@ -1211,7 +1218,7 @@ fn main(
     for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
         // Note: this differs from Vello, which uses .wzyx.
         // We changed it so that base color, ramps, and commands all
-		// use the same format.
+        // use the same format.
         rgba[i] = unpack4x8unorm(config.base_color);
     }
     var blend_stack: array<array<u32, PIXELS_PER_THREAD>, BLEND_STACK_SPLIT>;
@@ -1242,7 +1249,7 @@ fn main(
                 let color = read_color(cmd_ix);
                 // Note: this differs from Vello, which uses .wzyx.
                 // We changed it so that base color, ramps, and commands all
-				// use the same format.
+                // use the same format.
                 let fg = unpack4x8unorm(color.rgba_color);
                 for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
                     let fg_i = fg * area[i];
@@ -1257,7 +1264,13 @@ fn main(
                         rgba[i] = vec4(0.0);
                     }
                 } else {
-                    // TODO: spill to memory
+                    let blend_in_scratch = clip_depth - BLEND_STACK_SPLIT;
+                    let local_tile_ix = local_id.x * PIXELS_PER_THREAD + local_id.y * TILE_WIDTH;
+                    let local_blend_start = blend_offset + blend_in_scratch * TILE_WIDTH * TILE_HEIGHT + local_tile_ix;
+                    for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
+                        blend_spill[local_blend_start + i] = pack4x8unorm(rgba[i]);
+                        rgba[i] = vec4(0.0);
+                    }
                 }
                 clip_depth += 1u;
                 cmd_ix += 1u;
@@ -1270,7 +1283,10 @@ fn main(
                     if clip_depth < BLEND_STACK_SPLIT {
                         bg_rgba = blend_stack[clip_depth][i];
                     } else {
-                        // load from memory
+                        let blend_in_scratch = clip_depth - BLEND_STACK_SPLIT;
+                        let local_tile_ix = local_id.x * PIXELS_PER_THREAD + local_id.y * TILE_WIDTH;
+                        let local_blend_start = blend_offset + blend_in_scratch * TILE_WIDTH * TILE_HEIGHT + local_tile_ix;
+                        bg_rgba = blend_spill[local_blend_start + i];
                     }
                     let bg = unpack4x8unorm(bg_rgba);
                     let fg = rgba[i] * area[i] * end_clip.alpha;
