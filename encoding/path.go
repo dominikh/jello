@@ -480,3 +480,10 @@ func (enc *pathEncoder) insertStrokeCapMarkerSegment(isClosed bool) {
 		)
 	}
 }
+
+func (enc *pathEncoder) EmptyPath() {
+	// 4 bytes per float32, 4 floats
+	*enc.data = append(*enc.data, make([]byte, 4*4)...)
+	*enc.data = append(*enc.data, byte(PathTagLineToF32))
+	enc.numEncodedSegments++
+}

@@ -66,6 +66,12 @@ func (s *Scene) PushLayer(
 		// If the layer shape is invalid, encode a valid empty path. This suppresses
 		// all drawing until the layer is popped.
 		s.encoding.EncodePath(slices.Collect(curve.Rect{}.PathElements(0.1)), true)
+		s.encoding.EncodeEmptyShape()
+		path := curve.BezPath{
+			curve.MoveTo(curve.Pt(0, 0)),
+			curve.LineTo(curve.Pt(0, 0)),
+		}
+		s.estimator.CountPath(path, t, nil)
 	} else {
 		s.estimator.CountPath(clip, t, nil)
 	}

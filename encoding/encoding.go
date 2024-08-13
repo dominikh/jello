@@ -148,14 +148,29 @@ func (enc *Encoding) EncodeTransform(transform jmath.Transform) bool {
 	}
 }
 
-func (enc *Encoding) EncodePath(path curve.BezPath, isFill bool) bool {
-	pe := &pathEncoder{
+func (enc *Encoding) newPathEncoder(isFill bool) *pathEncoder {
+	return &pathEncoder{
 		tags:        &enc.PathTags,
 		data:        &enc.PathData,
 		numSegments: &enc.NumPathSegments,
 		numPaths:    &enc.NumPaths,
 		isFill:      isFill,
 	}
+}
+
+// EncodeEmptyShape encodes an empty path.
+//
+// This is useful for bookkeeping when a path is absolutely required (for example in
+// pushing a clip layer). It is almost always the case, however, that an application
+// can be optimized to not use this method.
+func (enc *Encoding) EncodeEmptyShape() {
+	pe := enc.newPathEncoder(true)
+	pe.EmptyPath()
+	pe.Finish(true)
+}
+
+func (enc *Encoding) EncodePath(path curve.BezPath, isFill bool) bool {
+	pe := enc.newPathEncoder(isFill)
 	pe.Path(path)
 	return pe.Finish(true) != 0
 }
