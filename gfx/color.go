@@ -14,7 +14,7 @@ var _ Color = Oklch{}
 
 type Color interface {
 	LinearSRGB() LinearSRGB
-	Lerp(to Color, t float32) Color
+	Lerp(to Color, t float64) Color
 	WithAlphaFactor(alpha float32) Color
 }
 
@@ -49,7 +49,7 @@ func (c LinearSRGB) SRGB() SRGB {
 	return out
 }
 
-func (c LinearSRGB) Lerp(to Color, t float32) Color {
+func (c LinearSRGB) Lerp(to Color, t float64) Color {
 	tol := to.LinearSRGB()
 	return LinearSRGB{
 		R: lerpFloat(c.R, tol.R, t),
@@ -134,7 +134,7 @@ func (c SRGB) LinearSRGB() LinearSRGB {
 	}
 }
 
-func (c SRGB) Lerp(to Color, t float32) Color {
+func (c SRGB) Lerp(to Color, t float64) Color {
 	return c.LinearSRGB().Lerp(to.LinearSRGB(), t)
 }
 
@@ -146,7 +146,7 @@ func (c Oklab) Oklch() Oklch {
 	return Oklch(lab(c).LCh())
 }
 
-func (c Oklab) Lerp(to Color, t float32) Color {
+func (c Oklab) Lerp(to Color, t float64) Color {
 	var toOklab Oklab
 	switch to := to.(type) {
 	case Oklab:
@@ -195,7 +195,7 @@ type Oklch struct {
 	L, C, H, A float32
 }
 
-func (c Oklch) Lerp(to Color, t float32) Color {
+func (c Oklch) Lerp(to Color, t float64) Color {
 	var toOklch Oklch
 	switch to := to.(type) {
 	case Oklch:
@@ -340,8 +340,8 @@ func okLabDifference(reference, sample Oklab) (deltaEOK float32) {
 	return float32(math.Hypot(math.Hypot(deltaL, deltaa), deltab))
 }
 
-func lerpFloat(x, y, a float32) float32 {
-	return x*(1.0-a) + y*a
+func lerpFloat(x, y float32, a float64) float32 {
+	return x*float32(1.0-a) + y*float32(a)
 }
 
 type lab struct {

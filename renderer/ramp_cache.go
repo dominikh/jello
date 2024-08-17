@@ -133,19 +133,19 @@ func makeRamp(stops []gfx.ColorStop) []uint32 {
 
 	out := make([]uint32, numSamples)
 
-	lastU := float32(0.0)
+	lastU := float64(0.0)
 	lastC := stops[0].Color
 	thisU := lastU
 	thisC := lastC
 	j := 0
 	for i := range numSamples {
-		u := float32(i) / (numSamples - 1)
+		u := float64(i) / (numSamples - 1)
 		for u > thisU {
 			lastU = thisU
 			lastC = thisC
 			if j+1 < len(stops) {
 				s := stops[j+1]
-				thisU = float32(s.Offset)
+				thisU = float64(s.Offset)
 				thisC = s.Color
 				j++
 			} else {
