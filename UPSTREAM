@@ -1,0 +1,16 @@
+The last time we looked at Vello was at the following commit:
+
+commit a00cd9ffb617810980487b88a6bfa13d3a642e40 (HEAD -> main, origin/main, origin/HEAD)
+Author: Raph Levien <raph.levien@gmail.com>
+Date:   Mon Aug 12 14:07:54 2024 -0700
+
+    Encode valid empty paths for empty clips (#651)
+    
+    There was logic to encode a valid empty path when the clip path was
+    empty, but this logic was ineffective because of empty line segment
+    culling. This patch directly encodes an empty path (single zero-length
+    line).
+    
+    Also includes a doc improvement for `push_layer`.
+    
+    Fixes #644
