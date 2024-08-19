@@ -54,9 +54,8 @@ func (s *Scene) PushLayer(
 		for _, el := range clip {
 			fmt.Printf("\tclip.Push(%#v)\n", el)
 		}
-		fmt.Printf("\ts.PushLayer(%#v, %g, %#v, clip.Elements())\n", blend, alpha, clipTransform)
+		fmt.Printf("\ts.PushLayer(%#v, %g, %#v, clip)\n", blend, alpha, clipTransform)
 		fmt.Println("}")
-		return
 	}
 
 	t := jmath.TransformFromKurbo(clipTransform)
@@ -81,7 +80,6 @@ func (s *Scene) PushLayer(
 func (s *Scene) PopLayer() {
 	if debugTrace {
 		fmt.Println("s.PopLayer()")
-		return
 	}
 
 	s.encoding.EncodeEndClip()
@@ -97,12 +95,11 @@ func (s *Scene) Fill(
 	if debugTrace {
 		fmt.Println("{")
 		fmt.Println("\tvar clip curve.BezPath")
-		for el := range path {
+		for _, el := range path {
 			fmt.Printf("\tclip.Push(%#v)\n", el)
 		}
-		fmt.Printf("\ts.Fill(%d, %#v, %#v, %#v, clip.Elements())\n", style, transform, brush, brushTransform)
+		fmt.Printf("\ts.Fill(%d, %#v, %#v, %#v, clip)\n", style, transform, brush, brushTransform)
 		fmt.Println("}")
-		return
 	}
 
 	t := jmath.TransformFromKurbo(transform)
@@ -139,6 +136,16 @@ func (s *Scene) Stroke(
 	// this is a compromise.
 	const shapeTolerance = 0.01
 	const strokeTolerance = shapeTolerance
+
+	if debugTrace {
+		fmt.Println("{")
+		fmt.Println("\tvar clip curve.BezPath")
+		for _, el := range shape {
+			fmt.Printf("\tclip.Push(%#v)\n", el)
+		}
+		fmt.Printf("\ts.Stroke(%#v, %#v, %#v, %#v, clip)\n", style, transform, b, brushTransform)
+		fmt.Println("}")
+	}
 
 	const gpuStrokes = true // Set this to `true` to enable GPU-side stroking
 	if gpuStrokes {
