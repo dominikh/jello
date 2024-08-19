@@ -1,4 +1,4 @@
-Jello is a Go port of
-[Vello](https://github.com/linebender/vello/blob/main/README.md), an
+Jello is a GPU-accelerated 2D graphics renderer. It is based heavily on
+[Vello](https://github.com/linebender/vello/blob/main/README.md) (an
 experimental 2D graphics rendering engine written in Rust, with a focus on GPU
-compute.
+compute), but isn't a direct clone.
