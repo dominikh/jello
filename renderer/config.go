@@ -144,8 +144,8 @@ func NewBufferSizes(layout *Layout, workgroups *WorkgroupCounts) BufferSizes {
 	lines := NewBufferSize[LineSoup](1 << 21)
 	segCounts := NewBufferSize[SegmentCount](1 << 21)
 	segments := NewBufferSize[PathSegment](1 << 21)
-	// 16 * 16 (1 << 8) is one blend spill, so this allows for 4096 spills.
-	blendSpill := NewBufferSize[uint32](1 << 20)
+	// 16 * 16 (1 << 8) is one blend spill, so this allows for 16384 spills.
+	blendSpill := NewBufferSize[uint32](1 << 22)
 	ptcl := NewBufferSize[uint32](1 << 23)
 	return BufferSizes{
 		PathReduced:     NewBufferSize[PathMonoid](reducedSize),
