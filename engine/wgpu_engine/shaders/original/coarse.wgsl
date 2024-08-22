@@ -8,6 +8,7 @@
 #import drawtag
 #import ptcl
 #import tile
+#import blend
 
 @group(0) @binding(0)
 var<uniform> config: Config;
@@ -313,7 +314,7 @@ fn main(
             let is_clip = (tag & 1u) != 0u;
             var is_blend = false;
             if is_clip {
-                let BLEND_CLIP = (128u << 8u) | 3u;
+                let BLEND_CLIP = (MIX_CLIP << 8u) | COMPOSE_SRC_OVER;
                 let scene_offset = draw_monoids[drawobj_ix].scene_offset;
                 let dd = config.drawdata_base + scene_offset;
                 let blend = scene[dd];
