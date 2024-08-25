@@ -124,7 +124,7 @@ func Float16(val float32) uint16 {
 	const inf16 uint32 = 31 << 23
 	const magic uint32 = 15 << 23
 	const signMask uint32 = 0x8000_0000
-	const roundMask uint32 = 0xF000
+	const roundMask uint32 = ^uint32(0xFFF)
 
 	u := math.Float32bits(val)
 	sign := u & signMask
