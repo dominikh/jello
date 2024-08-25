@@ -42,11 +42,8 @@ type Shaders struct {
 	DrawLeaf         ComputeShader
 	DrawReduce       ComputeShader
 	FineArea         ComputeShader
-	FineAreaR8       ComputeShader
 	FineMSAA16       ComputeShader
-	FineMSAA16R8     ComputeShader
 	FineMSAA8        ComputeShader
-	FineMSAA8R8      ComputeShader
 	Flatten          ComputeShader
 	PathCount        ComputeShader
 	PathCountSetup   ComputeShader
@@ -260,25 +257,6 @@ var Collection = Shaders{
 			BindingIndices: []uint8{0, 1, 2, 3, 4, 5, 6},
 		},
 	},
-	FineAreaR8: ComputeShader{
-		Name:          ("fine_area_r8"),
-		WorkgroupSize: [3]uint32{4, 16, 1},
-		Bindings: []BindType{
-			Uniform,
-			BufReadOnly,
-			BufReadOnly,
-			BufReadOnly,
-			Buffer,
-			Image,
-			ImageRead,
-			ImageArrayRead,
-		},
-		WorkgroupBuffers: nil,
-		WGSL: WGSLSource{
-			Code:           source("fine_area_r8"),
-			BindingIndices: []uint8{0, 1, 2, 3, 4, 5, 6},
-		},
-	},
 	FineMSAA16: ComputeShader{
 		Name:          ("fine_msaa16"),
 		WorkgroupSize: [3]uint32{4, 16, 1},
@@ -305,32 +283,6 @@ var Collection = Shaders{
 			BindingIndices: []uint8{0, 1, 2, 3, 4, 5, 6, 7},
 		},
 	},
-	FineMSAA16R8: ComputeShader{
-		Name:          ("fine_msaa16_r8"),
-		WorkgroupSize: [3]uint32{4, 16, 1},
-		Bindings: []BindType{
-			Uniform,
-			BufReadOnly,
-			BufReadOnly,
-			BufReadOnly,
-			Buffer,
-			Image,
-			ImageRead,
-			ImageArrayRead,
-			BufReadOnly,
-		},
-		WorkgroupBuffers: []WorkgroupBufferInfo{
-			{size_in_bytes: 256, index: 0},
-			{size_in_bytes: 16, index: 1},
-			{size_in_bytes: 16, index: 2},
-			{size_in_bytes: 256, index: 3},
-			{size_in_bytes: 4096, index: 4},
-		},
-		WGSL: WGSLSource{
-			Code:           source("fine_msaa16_r8"),
-			BindingIndices: []uint8{0, 1, 2, 3, 4, 5, 6, 7},
-		},
-	},
 	FineMSAA8: ComputeShader{
 		Name:          ("fine_msaa8"),
 		WorkgroupSize: [3]uint32{4, 16, 1},
@@ -354,32 +306,6 @@ var Collection = Shaders{
 		},
 		WGSL: WGSLSource{
 			Code:           source("fine_msaa8"),
-			BindingIndices: []uint8{0, 1, 2, 3, 4, 5, 6, 7},
-		},
-	},
-	FineMSAA8R8: ComputeShader{
-		Name:          ("fine_msaa8_r8"),
-		WorkgroupSize: [3]uint32{4, 16, 1},
-		Bindings: []BindType{
-			Uniform,
-			BufReadOnly,
-			BufReadOnly,
-			BufReadOnly,
-			Buffer,
-			Image,
-			ImageRead,
-			ImageArrayRead,
-			BufReadOnly,
-		},
-		WorkgroupBuffers: []WorkgroupBufferInfo{
-			{size_in_bytes: 256, index: 0},
-			{size_in_bytes: 16, index: 1},
-			{size_in_bytes: 16, index: 2},
-			{size_in_bytes: 256, index: 3},
-			{size_in_bytes: 2048, index: 4},
-		},
-		WGSL: WGSLSource{
-			Code:           source("fine_msaa8_r8"),
 			BindingIndices: []uint8{0, 1, 2, 3, 4, 5, 6, 7},
 		},
 	},
