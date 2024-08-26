@@ -134,7 +134,7 @@ func NewBufferSizes(layout *Layout, workgroups *WorkgroupCounts) BufferSizes {
 	drawMonoidWgs := workgroups.DrawReduce[0]
 
 	binningWgs := workgroups.Binning[0]
-	numPathsALigned := jmath.AlignUp(numPaths, 256)
+	numPathsAligned := jmath.AlignUp(numPaths, 256)
 
 	// The following buffer sizes have been hand picked to accommodate the vello test scenes as
 	// well as paris-30k. These should instead get derived from the scene layout using
@@ -164,7 +164,7 @@ func NewBufferSizes(layout *Layout, workgroups *WorkgroupCounts) BufferSizes {
 		BumpAlloc:       NewBufferSize[BumpAllocators](1),
 		IndirectCount:   NewBufferSize[IndirectCount](1),
 		BinHeaders:      NewBufferSize[BinHeader](binningWgs * 256),
-		Paths:           NewBufferSize[Path](numPathsALigned),
+		Paths:           NewBufferSize[Path](numPathsAligned),
 
 		Lines:      lines,
 		BinData:    binData,
