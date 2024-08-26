@@ -17,7 +17,7 @@ const (
 	DrawTagNop DrawTag = 0
 
 	// Color fill.
-	DrawTagColor DrawTag = 0x44
+	DrawTagColor DrawTag = 0x50
 
 	// Linear gradient fill.
 	DrawTagLinearGradient DrawTag = 0x114
@@ -45,14 +45,14 @@ func (tag DrawTag) InfoSize() uint32 {
 type drawColor struct {
 	_ structs.HostLayout
 
-	RGBA uint32
+	RGBA [4]float32
 }
 
 func newDrawColor(color gfx.Color) drawColor {
 	if color == nil {
 		return drawColor{}
 	}
-	return drawColor{RGBA: color.LinearSRGB().PremulUint32()}
+	return drawColor{RGBA: color.LinearSRGB().Premul32()}
 }
 
 type drawLinearGradient struct {

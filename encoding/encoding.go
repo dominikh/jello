@@ -235,7 +235,10 @@ func (enc *Encoding) EncodeBrush(b gfx.Brush, alpha float32) {
 
 func (enc *Encoding) EncodeColor(color drawColor) {
 	enc.DrawTags = append(enc.DrawTags, DrawTagColor)
-	enc.DrawData = binary.LittleEndian.AppendUint32(enc.DrawData, color.RGBA)
+	enc.DrawData = binary.LittleEndian.AppendUint32(enc.DrawData, math.Float32bits(color.RGBA[0]))
+	enc.DrawData = binary.LittleEndian.AppendUint32(enc.DrawData, math.Float32bits(color.RGBA[1]))
+	enc.DrawData = binary.LittleEndian.AppendUint32(enc.DrawData, math.Float32bits(color.RGBA[2]))
+	enc.DrawData = binary.LittleEndian.AppendUint32(enc.DrawData, math.Float32bits(color.RGBA[3]))
 }
 
 func (enc *Encoding) addRamp(colorStops []gfx.ColorStop, alpha float32, extend gfx.Extend) {

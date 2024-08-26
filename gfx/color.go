@@ -5,6 +5,8 @@ package gfx
 
 import (
 	"math"
+
+	"honnef.co/go/jello/jmath"
 )
 
 var _ Color = LinearSRGB{}
@@ -64,22 +66,22 @@ func (c LinearSRGB) WithAlphaFactor(alpha float32) Color {
 	return c
 }
 
-func (c LinearSRGB) PremulUint32() uint32 {
-	clamp := func(v, low, high float32) float32 {
-		if v < low {
-			return low
-		}
-		if v > high {
-			return high
-		}
-		return v
+func (c LinearSRGB) Premul16() [4]jmath.Float16 {
+	return [4]jmath.Float16{
+		jmath.Float16bits(c.R * c.A),
+		jmath.Float16bits(c.G * c.A),
+		jmath.Float16bits(c.B * c.A),
+		jmath.Float16bits(c.A),
 	}
-	a := clamp(c.A, 0, 1)
-	r := uint32(clamp(c.R*a, 0, 1) * 255)
-	g := uint32(clamp(c.G*a, 0, 1) * 255)
-	b := uint32(clamp(c.B*a, 0, 1) * 255)
-	ua := uint32(a * 255.0)
-	return r | (g << 8) | (b << 16) | (ua << 24)
+}
+
+func (c LinearSRGB) Premul32() [4]float32 {
+	return [4]float32{
+		c.R * c.A,
+		c.G * c.A,
+		c.B * c.A,
+		c.A,
+	}
 }
 
 func (c LinearSRGB) Oklab() Oklab {

@@ -42,7 +42,7 @@ struct CmdJump {
 }
 
 struct CmdColor {
-    rgba_color: u32,
+    rgba_color: vec4<f32>,
 }
 
 struct CmdLinGrad {

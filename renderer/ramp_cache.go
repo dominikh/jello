@@ -11,11 +11,12 @@ import (
 	"unsafe"
 
 	"honnef.co/go/jello/gfx"
+	"honnef.co/go/jello/jmath"
 	"honnef.co/go/safeish"
 )
 
 type Ramps struct {
-	Data   []uint32
+	Data   [][4]jmath.Float16
 	Width  uint32
 	Height uint32
 }
@@ -29,7 +30,7 @@ type rampCache struct {
 	epoch uint64
 	// mapping from []ColorStop
 	mapping map[string]*rampCacheEntry
-	data    []uint32
+	data    [][4]jmath.Float16
 
 	// slice reused across calls to add, used for building the map key.
 	key []byte
@@ -128,10 +129,9 @@ func (rc *rampCache) ramps() Ramps {
 	}
 }
 
-func makeRamp(stops []gfx.ColorStop) []uint32 {
+func makeRamp(stops []gfx.ColorStop) [][4]jmath.Float16 {
 	// OPT(dh): this could be an iterator instead
-
-	out := make([]uint32, numSamples)
+	out := make([][4]jmath.Float16, numSamples)
 
 	lastU := float64(0.0)
 	lastC := stops[0].Color
@@ -159,7 +159,7 @@ func makeRamp(stops []gfx.ColorStop) []uint32 {
 		} else {
 			c = lastC.Lerp(thisC, (u-lastU)/du)
 		}
-		out[i] = c.LinearSRGB().PremulUint32()
+		out[i] = c.LinearSRGB().Premul16()
 	}
 
 	return out

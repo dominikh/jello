@@ -55,7 +55,7 @@ func (rec *Recording) UploadUniform(arena *mem.Arena, name string, data []byte) 
 	return buf
 }
 
-func (rec *Recording) UploadImage(arena *mem.Arena, width, height uint32, format ImageFormat, data image.Image) ImageProxy {
+func (rec *Recording) UploadImage(arena *mem.Arena, width, height uint32, format ImageFormat, data []byte) ImageProxy {
 	imageProxy := NewImageProxy(width, height, format)
 	rec.push(arena, mem.Make(arena, UploadImage{imageProxy, data}))
 	return imageProxy
@@ -136,6 +136,7 @@ const (
 	Rgba8 ImageFormat = iota
 	Rgba8Srgb
 	Bgra8
+	Rgba16Float
 )
 
 type ImageProxy struct {
@@ -197,7 +198,7 @@ type UploadUniform struct {
 
 type UploadImage struct {
 	Proxy ImageProxy
-	Image image.Image
+	Data  []byte
 }
 
 type WriteImage struct {

@@ -112,7 +112,7 @@ func styleFromStroke(stroke curve.Stroke) Style {
 	case curve.RoundCap:
 		endCap = flagsEndCapBitsRound
 	}
-	miterLimit := uint32(jmath.Float16(float32(stroke.MiterLimit)))
+	miterLimit := uint32(jmath.Float16bits(float32(stroke.MiterLimit)))
 	return Style{
 		FlagsAndMiterLimits: style | join | startCap | endCap | miterLimit,
 		LineWidth:           float32(stroke.Width),

@@ -1011,12 +1011,15 @@ func (ts *tileState) writeColor(
 	config *renderer.ConfigUniform,
 	bump *renderer.BumpAllocators,
 	ptcl []uint32,
-	rgbaColor uint32,
+	rgbaColor [4]float32,
 ) {
-	ts.allocCmd(2, config, bump, ptcl)
+	ts.allocCmd(5, config, bump, ptcl)
 	ts.write(ptcl, 0, cmdColor)
-	ts.write(ptcl, 1, rgbaColor)
-	ts.cmdOffset += 2
+	ts.write(ptcl, 1, math.Float32bits(rgbaColor[0]))
+	ts.write(ptcl, 2, math.Float32bits(rgbaColor[1]))
+	ts.write(ptcl, 3, math.Float32bits(rgbaColor[2]))
+	ts.write(ptcl, 4, math.Float32bits(rgbaColor[3]))
+	ts.cmdOffset += 5
 }
 
 func (ts *tileState) writeImage(
@@ -1173,8 +1176,11 @@ func Coarse(arena *mem.Arena, _ uint32, resources []CPUBinding) {
 						switch encoding.DrawTag(drawtag) {
 						case encoding.DrawTagColor:
 							tileState.writePath(config, bump, ptcl, tile, drawFlags)
-							rgbaColor := scene[dd]
-							tileState.writeColor(config, bump, ptcl, rgbaColor)
+							r := math.Float32frombits(scene[dd])
+							g := math.Float32frombits(scene[dd+1])
+							b := math.Float32frombits(scene[dd+2])
+							a := math.Float32frombits(scene[dd+3])
+							tileState.writeColor(config, bump, ptcl, [4]float32{r, g, b, a})
 
 						case encoding.DrawTagImage:
 							tileState.writePath(config, bump, ptcl, tile, drawFlags)

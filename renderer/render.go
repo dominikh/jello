@@ -95,28 +95,33 @@ func (rd *Renderer) RenderEncodingCoarse(
 	layout, ramps, images, packed := resolver.Resolve(arena, encoding)
 	var gradientImage ImageProxy
 	if ramps.Height == 0 {
-		gradientImage = NewImageProxy(1, 1, Rgba8)
+		gradientImage = NewImageProxy(1, 1, Rgba16Float)
 	} else {
 		data := safeish.SliceCast[[]byte](ramps.Data)
 		gradientImage = recording.UploadImage(
 			arena,
 			ramps.Width,
 			ramps.Height,
-			Rgba8,
-			&image.RGBA{
-				Pix:    data,
-				Stride: 4 * int(ramps.Width),
-				Rect:   image.Rect(0, 0, int(ramps.Width), int(ramps.Height)),
-			},
+			Rgba16Float,
+			data,
 		)
 	}
 
 	var imageProxies []ImageProxy
 	if len(images) == 0 {
 		// We need at least one entry for the array of textures or the binding
-		// will be invalid. Since we're not going to display it we can just
-		// reuse the gradient image.
-		imageProxies = mem.Append(arena, imageProxies, gradientImage)
+		// will be invalid.
+
+		if rd.empty.Width == 0 {
+			rd.empty = recording.UploadImage(
+				arena,
+				1,
+				1,
+				Rgba8,
+				make([]byte, 4),
+			)
+		}
+		imageProxies = mem.Append(arena, imageProxies, rd.empty)
 
 	}
 	// XXX handle when there are more images than slots in the array
@@ -130,7 +135,7 @@ func (rd *Renderer) RenderEncodingCoarse(
 				uint32(img.Image.Bounds().Dy()),
 				// XXX support non-sRGB images
 				Rgba8Srgb,
-				img.Image,
+				img.Image.(*image.RGBA).Pix,
 			)
 			imageProxies = mem.Append(arena, imageProxies, proxy)
 			rd.images[img.Image] = proxy
@@ -434,7 +439,7 @@ func (rd *Renderer) RenderEncodingCoarse(
 	recording.FreeResource(arena, drawMonoidBuf.Resource())
 	recording.FreeResource(arena, binHeaderBuf.Resource())
 	recording.FreeResource(arena, pathBuf.Resource())
-	outImage := NewImageProxy(params.Width, params.Height, Rgba8)
+	outImage := NewImageProxy(params.Width, params.Height, Rgba16Float)
 	blendSpillBuf := NewBufferProxy(uint64(bufferSizes.BlendSpill.sizeInBytes()), "blend_spill")
 	r.fineWgCount = wgCounts.Fine
 	r.fineResources = fineResources{
@@ -553,6 +558,9 @@ type Renderer struct {
 	// images. Once Go supports weak pointers, we'll also want to delete images
 	// that were garbage collected.
 	images map[image.Image]ImageProxy
+
+	// Empty image used to ensure the image proxies array has at least one entry.
+	empty ImageProxy
 }
 
 func New() *Renderer {

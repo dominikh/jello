@@ -22,12 +22,14 @@ type RendererOptions struct {
 }
 
 var bindTypeMapping = [...]renderer.BindType{
-	shaders.Buffer:         {Type: renderer.BindTypeBuffer},
-	shaders.BufReadOnly:    {Type: renderer.BindTypeBufReadOnly},
-	shaders.Uniform:        {Type: renderer.BindTypeUniform},
-	shaders.Image:          {Type: renderer.BindTypeImage, ImageFormat: renderer.Rgba8},
-	shaders.ImageRead:      {Type: renderer.BindTypeImageRead, ImageFormat: renderer.Rgba8},
-	shaders.ImageArrayRead: {Type: renderer.BindTypeImageArrayRead, ImageFormat: renderer.Rgba8},
+	shaders.Buffer:           {Type: renderer.BindTypeBuffer},
+	shaders.BufReadOnly:      {Type: renderer.BindTypeBufReadOnly},
+	shaders.Uniform:          {Type: renderer.BindTypeUniform},
+	shaders.Output:           {Type: renderer.BindTypeImage, ImageFormat: renderer.Rgba16Float},
+	shaders.Image:            {Type: renderer.BindTypeImage, ImageFormat: renderer.Rgba8},
+	shaders.ImageRead:        {Type: renderer.BindTypeImageRead, ImageFormat: renderer.Rgba8},
+	shaders.ImageReadFloat16: {Type: renderer.BindTypeImageRead, ImageFormat: renderer.Rgba16Float},
+	shaders.ImageArrayRead:   {Type: renderer.BindTypeImageArrayRead, ImageFormat: renderer.Rgba8},
 }
 
 func (engine *Engine) prepareShaders() *renderer.FullShaders {
@@ -213,7 +215,7 @@ func newTargetTexture(dev *wgpu.Device, width, height uint32) *targetTexture {
 		SampleCount:   1,
 		Dimension:     wgpu.TextureDimension2D,
 		Usage:         wgpu.TextureUsageStorageBinding | wgpu.TextureUsageTextureBinding,
-		Format:        wgpu.TextureFormatRGBA8Unorm,
+		Format:        wgpu.TextureFormatRGBA16Float,
 	})
 	defer tex.Release()
 	view := tex.CreateView(nil)
@@ -232,6 +234,8 @@ func imageFormatToWGPU(f renderer.ImageFormat) wgpu.TextureFormat {
 		return wgpu.TextureFormatBGRA8Unorm
 	case renderer.Rgba8Srgb:
 		return wgpu.TextureFormatRGBA8UnormSrgb
+	case renderer.Rgba16Float:
+		return wgpu.TextureFormatRGBA16Float
 	default:
 		panic(fmt.Sprintf("unhandled value %d", f))
 	}

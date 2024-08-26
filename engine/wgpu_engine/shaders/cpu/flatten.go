@@ -593,7 +593,7 @@ func drawJoin(
 		}
 	case encoding.FlagsJoinBitsMiter:
 		hypot := jmath.Hypot32(cr, d)
-		miterLimit := jmath.Float32(uint16(styleFlags & encoding.MiterLimitMask))
+		miterLimit := jmath.Float16frombits(uint16(styleFlags & encoding.MiterLimitMask))
 
 		if 2.*hypot < (hypot+d)*miterLimit*miterLimit && cr != 0. {
 			isBackside := cr > 0.

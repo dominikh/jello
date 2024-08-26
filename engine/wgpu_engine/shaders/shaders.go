@@ -10,8 +10,10 @@ const (
 	Buffer BindType = iota + 1
 	BufReadOnly
 	Uniform
+	Output
 	Image
 	ImageRead
+	ImageReadFloat16
 	ImageArrayRead
 )
 

@@ -34,10 +34,10 @@ var<storage> ptcl: array<u32>;
 var<storage> info: array<u32>;
 
 @group(0) @binding(4)
-var<storage, read_write> blend_spill: array<u32>;
+var<storage, read_write> blend_spill: array<vec4<f32>>;
 
 @group(0) @binding(5)
-var output: texture_storage_2d<rgba8unorm, write>;
+var output: texture_storage_2d<rgba16float, write>;
 
 #ifdef full
 @group(0) @binding(6)
@@ -719,8 +719,11 @@ fn read_fill(cmd_ix: u32) -> CmdFill {
 }
 
 fn read_color(cmd_ix: u32) -> CmdColor {
-    let rgba_color = ptcl[cmd_ix + 1u];
-    return CmdColor(rgba_color);
+    let r = bitcast<f32>(ptcl[cmd_ix + 1u]);
+    let g = bitcast<f32>(ptcl[cmd_ix + 2u]);
+    let b = bitcast<f32>(ptcl[cmd_ix + 3u]);
+    let a = bitcast<f32>(ptcl[cmd_ix + 4u]);
+    return CmdColor(vec4(r, g, b, a));
 }
 
 fn read_lin_grad(cmd_ix: u32) -> CmdLinGrad {
@@ -893,12 +896,9 @@ fn main(
     let local_xy = vec2(f32(local_id.x * PIXELS_PER_THREAD), f32(local_id.y));
     var rgba: array<vec4<f32>, PIXELS_PER_THREAD>;
     for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
-        // Note: this differs from Vello, which uses .wzyx.
-        // We changed it so that base color, ramps, and commands all
-        // use the same format.
-        rgba[i] = unpack4x8unorm(config.base_color);
+        rgba[i] = config.base_color;
     }
-    var blend_stack: array<array<u32, PIXELS_PER_THREAD>, BLEND_STACK_SPLIT>;
+    var blend_stack: array<array<vec4<f32>, PIXELS_PER_THREAD>, BLEND_STACK_SPLIT>;
     var clip_depth = 0u;
     var area: array<f32, PIXELS_PER_THREAD>;
     var cmd_ix = tile_ix * PTCL_INITIAL_ALLOC;
@@ -928,20 +928,17 @@ fn main(
             }
             case CMD_COLOR: {
                 let color = read_color(cmd_ix);
-                // Note: this differs from Vello, which uses .wzyx.
-                // We changed it so that base color, ramps, and commands all
-                // use the same format.
-                let fg = unpack4x8unorm(color.rgba_color);
+                let fg = color.rgba_color;
                 for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
                     let fg_i = fg * area[i];
                     rgba[i] = rgba[i] * (1.0 - fg_i.a) + fg_i;
                 }
-                cmd_ix += 2u;
+                cmd_ix += 5u;
             }
             case CMD_BEGIN_CLIP: {
                 if clip_depth < BLEND_STACK_SPLIT {
                     for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
-                        blend_stack[clip_depth][i] = pack4x8unorm(rgba[i]);
+                        blend_stack[clip_depth][i] = rgba[i];
                         rgba[i] = vec4(0.0);
                     }
                 } else {
@@ -949,7 +946,7 @@ fn main(
                     let local_tile_ix = local_id.x * PIXELS_PER_THREAD + local_id.y * TILE_WIDTH;
                     let local_blend_start = blend_offset + blend_in_scratch * TILE_WIDTH * TILE_HEIGHT + local_tile_ix;
                     for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
-                        blend_spill[local_blend_start + i] = pack4x8unorm(rgba[i]);
+                        blend_spill[local_blend_start + i] = rgba[i];
                         rgba[i] = vec4(0.0);
                     }
                 }
@@ -960,16 +957,15 @@ fn main(
                 let end_clip = read_end_clip(cmd_ix);
                 clip_depth -= 1u;
                 for (var i = 0u; i < PIXELS_PER_THREAD; i += 1u) {
-                    var bg_rgba: u32;
+                    var bg: vec4<f32>;
                     if clip_depth < BLEND_STACK_SPLIT {
-                        bg_rgba = blend_stack[clip_depth][i];
+                        bg = blend_stack[clip_depth][i];
                     } else {
                         let blend_in_scratch = clip_depth - BLEND_STACK_SPLIT;
                         let local_tile_ix = local_id.x * PIXELS_PER_THREAD + local_id.y * TILE_WIDTH;
                         let local_blend_start = blend_offset + blend_in_scratch * TILE_WIDTH * TILE_HEIGHT + local_tile_ix;
-                        bg_rgba = blend_spill[local_blend_start + i];
+                        bg = blend_spill[local_blend_start + i];
                     }
-                    let bg = unpack4x8unorm(bg_rgba);
                     let fg = rgba[i] * area[i] * end_clip.alpha;
                     rgba[i] = blend_mix_compose(bg, fg, end_clip.blend);
                 }

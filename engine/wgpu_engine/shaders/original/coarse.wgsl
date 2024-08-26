@@ -112,10 +112,13 @@ fn write_path(tile: Tile, tile_ix: u32, draw_flags: u32) {
 }
 
 fn write_color(color: CmdColor) {
-    alloc_cmd(2u);
+    alloc_cmd(5u);
     ptcl[cmd_offset] = CMD_COLOR;
-    ptcl[cmd_offset + 1u] = color.rgba_color;
-    cmd_offset += 2u;
+    ptcl[cmd_offset + 1u] = bitcast<u32>(color.rgba_color.r);
+    ptcl[cmd_offset + 2u] = bitcast<u32>(color.rgba_color.g);
+    ptcl[cmd_offset + 3u] = bitcast<u32>(color.rgba_color.b);
+    ptcl[cmd_offset + 4u] = bitcast<u32>(color.rgba_color.a);
+    cmd_offset += 5u;
 }
 
 fn write_grad(ty: u32, index: u32, info_offset: u32) {
@@ -372,8 +375,11 @@ fn main(
                 switch drawtag {
                     case DRAWTAG_FILL_COLOR: {
                         write_path(tile, tile_ix, draw_flags);
-                        let rgba_color = scene[dd];
-                        write_color(CmdColor(rgba_color));
+                        let r = bitcast<f32>(scene[dd]);
+                        let g = bitcast<f32>(scene[dd+1]);
+                        let b = bitcast<f32>(scene[dd+2]);
+                        let a = bitcast<f32>(scene[dd+3]);
+                        write_color(CmdColor(vec4(r, g, b, a)));
                     }
                     case DRAWTAG_FILL_LIN_GRADIENT: {
                         write_path(tile, tile_ix, draw_flags);

@@ -32,7 +32,7 @@ type ConfigUniform struct {
 	// Height of the target in pixels.
 	TargetHeight uint32
 	// The base background color applied to the target before any blends.
-	BaseColor uint32
+	BaseColor [4]float32
 	// Layout of packed scene data.
 	Layout Layout
 	// Size of line soup buffer allocation (in [`LineSoup`]s)
@@ -104,7 +104,7 @@ func NewRenderConfig(arena *mem.Arena, layout *Layout, width, height uint32, bas
 			HeightInTiles: heightInTiles,
 			TargetWidth:   width,
 			TargetHeight:  height,
-			BaseColor:     baseColor.LinearSRGB().PremulUint32(),
+			BaseColor:     baseColor.LinearSRGB().Premul32(),
 			LinesSize:     uint32(bufferSizes.Lines),
 			BinningSize:   uint32(bufferSizes.BinData) - layout.BinDataStart,
 			TilesSize:     uint32(bufferSizes.Tiles),
@@ -144,8 +144,8 @@ func NewBufferSizes(layout *Layout, workgroups *WorkgroupCounts) BufferSizes {
 	lines := NewBufferSize[LineSoup](1 << 21)
 	segCounts := NewBufferSize[SegmentCount](1 << 21)
 	segments := NewBufferSize[PathSegment](1 << 21)
-	// 16 * 16 (1 << 8) is one blend spill, so this allows for 16384 spills.
-	blendSpill := NewBufferSize[uint32](1 << 22)
+	// 16 * 16 (1 << 8) is one blend spill, so this allows for 8192 spills.
+	blendSpill := NewBufferSize[[4]float32](1 << 21)
 	ptcl := NewBufferSize[uint32](1 << 23)
 	return BufferSizes{
 		PathReduced:     NewBufferSize[PathMonoid](reducedSize),
@@ -269,7 +269,7 @@ type BufferSizes struct {
 	Tiles      BufferSize[Tile]
 	SegCounts  BufferSize[SegmentCount]
 	Segments   BufferSize[PathSegment]
-	BlendSpill BufferSize[uint32]
+	BlendSpill BufferSize[[4]float32]
 	Ptcl       BufferSize[uint32]
 }
 

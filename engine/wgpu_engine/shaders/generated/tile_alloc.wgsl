@@ -15,9 +15,8 @@ struct Config {
     target_height: u32,
 
     // The initial color applied to the pixels in a tile during the fine stage.
-    // This is only used in the full pipeline. The format is packed RGBA8 in LSB
-    // order.
-    base_color: u32,
+    // This is only used in the full pipeline.
+    base_color: vec4<f32>,
 
     n_drawobj: u32,
     n_path: u32,
@@ -126,7 +125,7 @@ struct DrawMonoid {
 // Each draw object has a 32-bit draw tag, which is a bit-packed
 // version of the draw monoid.
 const DRAWTAG_NOP = 0u;
-const DRAWTAG_FILL_COLOR = 0x44u;
+const DRAWTAG_FILL_COLOR = 0x50u;
 const DRAWTAG_FILL_LIN_GRADIENT = 0x114u;
 const DRAWTAG_FILL_RAD_GRADIENT = 0x29cu;
 const DRAWTAG_FILL_SWEEP_GRADIENT = 0x254u;

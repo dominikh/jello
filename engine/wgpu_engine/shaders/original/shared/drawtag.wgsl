@@ -17,7 +17,7 @@ struct DrawMonoid {
 // Each draw object has a 32-bit draw tag, which is a bit-packed
 // version of the draw monoid.
 let DRAWTAG_NOP = 0u;
-let DRAWTAG_FILL_COLOR = 0x44u;
+let DRAWTAG_FILL_COLOR = 0x50u;
 let DRAWTAG_FILL_LIN_GRADIENT = 0x114u;
 let DRAWTAG_FILL_RAD_GRADIENT = 0x29cu;
 let DRAWTAG_FILL_SWEEP_GRADIENT = 0x254u;

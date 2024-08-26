@@ -116,10 +116,12 @@ func (t Transform) Mul(other Transform) Transform {
 	}
 }
 
-// Float16 converts a float32 to IEEE-754 binary16 format represented as the bits of a u16.
+type Float16 = uint16
+
+// Float16bits converts a float32 to IEEE-754 binary16 format represented as the bits of a u16.
 // This implementation was adapted from Fabian Giesen's `float_to_half_fast3`()
 // function which can be found at <https://gist.github.com/rygorous/2156668#file-gistfile1-cpp-L285>
-func Float16(val float32) uint16 {
+func Float16bits(val float32) Float16 {
 	const inf32 uint32 = 255 << 23
 	const inf16 uint32 = 31 << 23
 	const magic uint32 = 15 << 23
@@ -159,11 +161,11 @@ func Float16(val float32) uint16 {
 	return output | uint16(sign>>16)
 }
 
-// Float32 converts a 16-bit precision IEEE-754 binary16 float to float32.
+// Float16frombits converts a 16-bit precision IEEE-754 binary16 float to float32.
 //
 // This implementation was adapted from Fabian Giesen's `half_to_float()`
 // function which can be found at <https://gist.github.com/rygorous/2156668#file-gistfile1-cpp-L574>
-func Float32(val uint16) float32 {
+func Float16frombits(val Float16) float32 {
 	bits := uint32(val)
 	const magic uint32 = 113 << 23
 	const shiftedExp uint32 = 0x7c00 << 13 // exponent mask after shift

@@ -404,7 +404,7 @@ func (eng *Engine) RunRecording(
 					Origin:   wgpu.Origin3D{X: 0, Y: 0, Z: 0},
 					Aspect:   wgpu.TextureAspectAll,
 				}),
-				imageData(cmd.Image),
+				cmd.Data,
 				mem.Make(arena, wgpu.TextureDataLayout{
 					Offset: 0,
 					// XXX can we use this to upload subimages?
@@ -476,6 +476,7 @@ func (eng *Engine) RunRecording(
 					eng.Device,
 					queue,
 					encoder,
+					s.label,
 					s.bindGroupLayout,
 					bindings,
 				)
@@ -518,6 +519,7 @@ func (eng *Engine) RunRecording(
 					eng.Device,
 					queue,
 					encoder,
+					s.label,
 					s.bindGroupLayout,
 					bindings,
 				)
@@ -863,6 +865,7 @@ func (m *transientBindMap) createBindGroup(
 	dev *wgpu.Device,
 	queue *wgpu.Queue,
 	encoder *wgpu.CommandEncoder,
+	shaderName string,
 	layout *wgpu.BindGroupLayout,
 	bindings []renderer.ResourceProxy,
 ) *wgpu.BindGroup {
@@ -998,6 +1001,7 @@ func (m *transientBindMap) createBindGroup(
 	return dev.CreateBindGroup(mem.Make(arena, wgpu.BindGroupDescriptor{
 		Layout:  layout,
 		Entries: entries,
+		Label:   shaderName,
 	}))
 }
 
