@@ -7,8 +7,8 @@ package renderer
 import (
 	"image"
 
+	"honnef.co/go/color"
 	"honnef.co/go/jello/encoding"
-	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/mem"
 	"honnef.co/go/jello/profiler"
 	"honnef.co/go/safeish"
@@ -56,7 +56,7 @@ const (
 )
 
 type RenderParams struct {
-	BaseColor          gfx.Color
+	BaseColor          color.Color
 	Width              uint32
 	Height             uint32
 	AntialiasingMethod AaConfig
@@ -142,7 +142,7 @@ func (rd *Renderer) RenderEncodingCoarse(
 		}
 	}
 
-	cpuConfig := NewRenderConfig(arena, &layout, params.Width, params.Height, params.BaseColor)
+	cpuConfig := NewRenderConfig(arena, &layout, params.Width, params.Height, &params.BaseColor)
 	bufferSizes := &cpuConfig.bufferSizes
 	wgCounts := &cpuConfig.workgroupCounts
 

@@ -8,10 +8,12 @@ import (
 	"structs"
 	"unsafe"
 
-	"golang.org/x/exp/constraints"
+	"honnef.co/go/color"
 	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/jmath"
 	"honnef.co/go/jello/mem"
+
+	"golang.org/x/exp/constraints"
 )
 
 type WorkgroupSize [3]uint32
@@ -89,7 +91,7 @@ type RenderConfig struct {
 	bufferSizes     BufferSizes
 }
 
-func NewRenderConfig(arena *mem.Arena, layout *Layout, width, height uint32, baseColor gfx.Color) *RenderConfig {
+func NewRenderConfig(arena *mem.Arena, layout *Layout, width, height uint32, baseColor *color.Color) *RenderConfig {
 	newWidth := nextMultipleOf(width, tileWidth)
 	newHeight := nextMultipleOf(height, tileHeight)
 	widthInTiles := newWidth / tileWidth
@@ -104,7 +106,7 @@ func NewRenderConfig(arena *mem.Arena, layout *Layout, width, height uint32, bas
 			HeightInTiles: heightInTiles,
 			TargetWidth:   width,
 			TargetHeight:  height,
-			BaseColor:     baseColor.LinearSRGB().Premul32(),
+			BaseColor:     gfx.Premul32(baseColor),
 			LinesSize:     uint32(bufferSizes.Lines),
 			BinningSize:   uint32(bufferSizes.BinData) - layout.BinDataStart,
 			TilesSize:     uint32(bufferSizes.Tiles),

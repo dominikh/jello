@@ -7,6 +7,7 @@ package encoding
 import (
 	"structs"
 
+	"honnef.co/go/color"
 	"honnef.co/go/jello/gfx"
 )
 
@@ -48,11 +49,11 @@ type drawColor struct {
 	RGBA [4]float32
 }
 
-func newDrawColor(color gfx.Color) drawColor {
+func newDrawColor(color *color.Color) drawColor {
 	if color == nil {
 		return drawColor{}
 	}
-	return drawColor{RGBA: color.LinearSRGB().Premul32()}
+	return drawColor{RGBA: gfx.Premul32(color)}
 }
 
 type drawLinearGradient struct {

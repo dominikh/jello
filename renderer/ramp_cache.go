@@ -6,10 +6,11 @@ package renderer
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"strings"
-	"unsafe"
 
+	"honnef.co/go/color"
 	"honnef.co/go/jello/gfx"
 	"honnef.co/go/jello/jmath"
 	"honnef.co/go/safeish"
@@ -57,31 +58,12 @@ func (rc *rampCache) add(stops []gfx.ColorStop) uint32 {
 	// sequences of colors that would have the same concatenation.
 	key = binary.LittleEndian.AppendUint64(key, uint64(len(stops)))
 	for _, stop := range stops {
-		if stop.Color == nil {
-			panic("nil color in gradient")
-		}
-
 		key = binary.LittleEndian.AppendUint32(key, math.Float32bits(stop.Offset))
-		type iface struct {
-			tab *struct {
-				_   uintptr
-				typ *struct {
-					size uintptr
-					_    uintptr
-					hash uint32
-				}
-			}
-			data unsafe.Pointer
-		}
-		v := safeish.Cast[*iface](&stop.Color)
-		// This assumes that the type doesn't move in memory. But even if it
-		// does, because we're also incorporating the type hash, the odds of a
-		// collision are miniscule, so at worst we fail to reuse a cached entry.
-		key = binary.LittleEndian.AppendUint64(key, uint64(uintptr(unsafe.Pointer(v.tab.typ))))
-		key = binary.LittleEndian.AppendUint32(key, v.tab.typ.hash)
-		if v.data != nil {
-			key = append(key, unsafe.Slice((*byte)(v.data), v.tab.typ.size)...)
-		}
+		key = binary.LittleEndian.AppendUint64(key, math.Float64bits(stop.Color.Values[0]))
+		key = binary.LittleEndian.AppendUint64(key, math.Float64bits(stop.Color.Values[1]))
+		key = binary.LittleEndian.AppendUint64(key, math.Float64bits(stop.Color.Values[2]))
+		key = binary.LittleEndian.AppendUint64(key, math.Float64bits(stop.Color.Alpha))
+		key = append(key, stop.Color.Space.ID...)
 	}
 	rc.key = key[:0]
 
@@ -130,37 +112,45 @@ func (rc *rampCache) ramps() Ramps {
 }
 
 func makeRamp(stops []gfx.ColorStop) [][4]jmath.Float16 {
-	// OPT(dh): this could be an iterator instead
-	out := make([][4]jmath.Float16, numSamples)
-
-	lastU := float64(0.0)
-	lastC := stops[0].Color
-	thisU := lastU
-	thisC := lastC
-	j := 0
-	for i := range numSamples {
-		u := float64(i) / (numSamples - 1)
-		for u > thisU {
-			lastU = thisU
-			lastC = thisC
-			if j+1 < len(stops) {
-				s := stops[j+1]
-				thisU = float64(s.Offset)
-				thisC = s.Color
-				j++
-			} else {
-				break
+	if len(stops) < 2 {
+		panic("internal error: makeRamp needs at least two stops")
+	}
+	if stops[0].Offset != 0 {
+		stops_ := make([]gfx.ColorStop, len(stops)+1)
+		copy(stops_[1:], stops)
+		stops_[0] = stops_[1]
+		stops_[0].Offset = 0
+		stops = stops_
+	}
+	out := make([][4]jmath.Float16, 0, numSamples)
+	remaining := numSamples
+	for i := 1; i < len(stops); i++ {
+		prevStop := &stops[i-1]
+		stop := &stops[i]
+		var n int
+		if i == len(stops)-1 {
+			n = remaining
+		} else {
+			frac := (stop.Offset - prevStop.Offset)
+			n = int(jmath.Round32(float32(numSamples) * frac))
+			n = min(remaining, n)
+		}
+		remaining -= n
+		// We use sRGB for the gradient because that's what people expect...
+		// Eventually we'll support doing gradients in other color spaces, at
+		// which point we'll default to something nicer, maybe even Oklch.
+		switch n {
+		case 0:
+		case 1:
+			out = append(out, gfx.Premul16(&stop.Color))
+		default:
+			for step := range color.Step(&prevStop.Color, &stop.Color, color.SRGB, color.LinearSRGB, n) {
+				out = append(out, gfx.Premul16(&step))
 			}
 		}
-		du := thisU - lastU
-		var c gfx.Color
-		if du < 1e-9 {
-			c = thisC
-		} else {
-			c = lastC.Lerp(thisC, (u-lastU)/du)
-		}
-		out[i] = c.LinearSRGB().Premul16()
 	}
-
+	if len(out) != numSamples {
+		panic(fmt.Sprintf("internal error: tried to generate %d colors but ended up with %d", numSamples, len(out)))
+	}
 	return out
 }

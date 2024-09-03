@@ -178,13 +178,9 @@ func (enc *Encoding) EncodePath(path curve.BezPath, isFill bool) bool {
 func (enc *Encoding) EncodeBrush(b gfx.Brush, alpha float32) {
 	switch b := b.(type) {
 	case gfx.SolidBrush:
-		var color gfx.Color
-		if alpha == 1.0 {
-			color = b.Color
-		} else {
-			color = b.Color.WithAlphaFactor(alpha)
-		}
-		enc.EncodeColor(newDrawColor(color))
+		color := b.Color
+		color.Alpha *= float64(alpha)
+		enc.EncodeColor(newDrawColor(&color))
 	case gfx.GradientBrush:
 		switch g := b.Gradient.(type) {
 		case gfx.LinearGradient:
@@ -275,7 +271,9 @@ func (enc *Encoding) EncodeLinearGradient(
 	case 0:
 		enc.EncodeColor(drawColor{})
 	case 1:
-		enc.EncodeColor(newDrawColor(colorStops[0].Color.WithAlphaFactor(alpha)))
+		c := colorStops[0].Color
+		c.Alpha *= float64(alpha)
+		enc.EncodeColor(newDrawColor(&c))
 	default:
 		enc.addRamp(colorStops, alpha, extend)
 		enc.DrawTags = append(enc.DrawTags, DrawTagLinearGradient)
@@ -300,7 +298,9 @@ func (enc *Encoding) EncodeRadialGradient(
 	case 0:
 		enc.EncodeColor(drawColor{})
 	case 1:
-		enc.EncodeColor(newDrawColor(colorStops[0].Color.WithAlphaFactor(alpha)))
+		c := colorStops[0].Color
+		c.Alpha *= float64(alpha)
+		enc.EncodeColor(newDrawColor(&c))
 	default:
 		enc.addRamp(colorStops, alpha, extend)
 		enc.DrawTags = append(enc.DrawTags, DrawTagRadialGradient)
@@ -323,7 +323,9 @@ func (enc *Encoding) EncodeSweepGradient(
 	case 0:
 		enc.EncodeColor(drawColor{})
 	case 1:
-		enc.EncodeColor(newDrawColor(colorStops[0].Color.WithAlphaFactor(alpha)))
+		c := colorStops[0].Color
+		c.Alpha *= float64(alpha)
+		enc.EncodeColor(newDrawColor(&c))
 	default:
 		enc.addRamp(colorStops, alpha, extend)
 		enc.DrawTags = append(enc.DrawTags, DrawTagSweepGradient)

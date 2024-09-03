@@ -3,12 +3,14 @@
 
 package gfx
 
+import "honnef.co/go/color"
+
 type Brush interface {
 	isBrush()
 }
 
 type SolidBrush struct {
-	Color Color
+	Color color.Color
 }
 
 type GradientBrush struct {

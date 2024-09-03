@@ -4,17 +4,22 @@
 
 package gfx
 
-import "honnef.co/go/curve"
+import (
+	"honnef.co/go/color"
+	"honnef.co/go/curve"
+)
 
 type ColorStop struct {
 	Offset float32
-	Color  Color
+	Color  color.Color
 }
 
-func (cs ColorStop) WithAlphaFactor(alpha float32) ColorStop {
+func (cs *ColorStop) WithAlphaFactor(alpha float32) ColorStop {
+	c := cs.Color
+	c.Alpha = float64(alpha)
 	return ColorStop{
 		Offset: cs.Offset,
-		Color:  cs.Color.WithAlphaFactor(alpha),
+		Color:  c,
 	}
 }
 
