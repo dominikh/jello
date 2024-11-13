@@ -222,11 +222,12 @@ func (a *Arena) alloc(typ reflect.Type, num int) unsafe.Pointer {
 		}
 	}
 
-	// FIXME(dh): guard against types that are larger than a whole slab
-
 	rtyp := (*iface)(unsafe.Pointer(&typ)).rtyp
 	// rtyp.size already includes padding
 	totalSize := num * rtyp.size
+	if totalSize > slabSize {
+		return reflect.MakeSlice(reflect.SliceOf(typ), num, num).UnsafePointer()
+	}
 	if rtyp.ptrPrefix == 0 {
 		// OPT(dh): skip full slabs
 		for i := range a.byteSlabs {
