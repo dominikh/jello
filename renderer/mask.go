@@ -38,7 +38,7 @@ var maskLUT16 = makeMaskLUT16()
 // makeMaskLUT makes a lookup table of half-plane masks.
 //
 // The table is organized into two blocks each with `maskHeight/2` slopes.
-// The first block is negative slopes (x decreases as y increates),
+// The first block is negative slopes (x decreases as y increases),
 // the second as positive.
 func makeMaskLUT() []uint8 {
 	var out []uint8
@@ -86,7 +86,7 @@ func oneMask16(slope float64, translation float64, isPos bool) uint16 {
 // makeMaskLUT16 makes a lookup table of half-plane masks.
 //
 // The table is organized into two blocks each with `mask16Height/2` slopes.
-// The first block is negative slopes (x decreases as y increates),
+// The first block is negative slopes (x decreases as y increases),
 // the second as positive.
 func makeMaskLUT16() []uint8 {
 	var out []uint8
