@@ -191,7 +191,7 @@ func (s *Scene) Stroke(
 			curve.StrokeOpts{},
 			strokeTolerance,
 		)
-		s.Fill(gfx.NonZero, transform, b, brushTransform, stroked)
+		s.Fill(gfx.NonZero, transform, b, brushTransform, slices.Collect(stroked))
 	}
 }
 

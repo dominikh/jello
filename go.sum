@@ -4,8 +4,8 @@ golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8 h1:yixxcjnhBmY0nkL253HFVIm0J
 golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8/go.mod h1:jj3sYF3dwk5D+ghuXyeI3r5MFf+NT2An6/9dOA95KSI=
 honnef.co/go/color v0.0.0-20250521155844-50a57575c7d3 h1:nUNF+kiRJ7k9nMrSahhpILlBqljF7uahZTgSnLPzKkc=
 honnef.co/go/color v0.0.0-20250521155844-50a57575c7d3/go.mod h1:oOmaoGfEfvILH1ofpWB1DIuSDjyrkPJrKFIDVIuENfk=
-honnef.co/go/curve v0.0.0-20240713195357-1e39b7d8d78a h1:0jPLlqFRYFW+eZT5V4ibhDlntzRvXONT8qmcCTkS+Pw=
-honnef.co/go/curve v0.0.0-20240713195357-1e39b7d8d78a/go.mod h1:qoI+1aKyxvS7Ni/ZX2NKQe2S6PfL08gR3hTHK3/E+io=
+honnef.co/go/curve v0.0.0-20250325031802-e021cd9ef495 h1:mv/yPaMMi4CWpWh+V8Qj0Pg1WO4/a+FuEo5/C7ciBZU=
+honnef.co/go/curve v0.0.0-20250325031802-e021cd9ef495/go.mod h1:qoI+1aKyxvS7Ni/ZX2NKQe2S6PfL08gR3hTHK3/E+io=
 honnef.co/go/safeish v0.0.0-20240708173349-a249fc03b5f3 h1:caxtAU8OLU3+NmFCYWgNqxB/FnvcZIoWy8uQGWuOHWU=
 honnef.co/go/safeish v0.0.0-20240708173349-a249fc03b5f3/go.mod h1:6TmSwH8eepkcwN0dPPAkTpxwjEJzgJq5Bv2HD3HHAP8=
 honnef.co/go/wgpu v0.0.0-20240719115612-5d243632325b h1:fdMCZlMAjGRIb+1lZM0vUKCs5GO9LVtyS3FUbRVxSyo=
