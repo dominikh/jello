@@ -13,7 +13,7 @@ func Premul16(c *color.Color) [4]jmath.Float16 {
 	r := cc.Values[0]
 	g := cc.Values[1]
 	b := cc.Values[2]
-	a := cc.Alpha
+	a := cc.Values[3]
 
 	return [4]jmath.Float16{
 		jmath.Float16bits(float32(r * a)),
@@ -28,7 +28,7 @@ func Premul32(c *color.Color) [4]float32 {
 	r := cc.Values[0]
 	g := cc.Values[1]
 	b := cc.Values[2]
-	a := cc.Alpha
+	a := cc.Values[3]
 
 	return [4]float32{
 		float32(r * a),

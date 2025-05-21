@@ -16,7 +16,7 @@ type ColorStop struct {
 
 func (cs *ColorStop) WithAlphaFactor(alpha float32) ColorStop {
 	c := cs.Color
-	c.Alpha = float64(alpha)
+	c.Values[3] = float64(alpha)
 	return ColorStop{
 		Offset: cs.Offset,
 		Color:  c,

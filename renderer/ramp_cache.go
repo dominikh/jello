@@ -62,7 +62,7 @@ func (rc *rampCache) add(stops []gfx.ColorStop) uint32 {
 		key = binary.LittleEndian.AppendUint64(key, math.Float64bits(stop.Color.Values[0]))
 		key = binary.LittleEndian.AppendUint64(key, math.Float64bits(stop.Color.Values[1]))
 		key = binary.LittleEndian.AppendUint64(key, math.Float64bits(stop.Color.Values[2]))
-		key = binary.LittleEndian.AppendUint64(key, math.Float64bits(stop.Color.Alpha))
+		key = binary.LittleEndian.AppendUint64(key, math.Float64bits(stop.Color.Values[3]))
 		key = append(key, stop.Color.Space.ID...)
 	}
 	rc.key = key[:0]
@@ -144,7 +144,7 @@ func makeRamp(stops []gfx.ColorStop) [][4]jmath.Float16 {
 		case 1:
 			out = append(out, gfx.Premul16(&stop.Color))
 		default:
-			for step := range color.Step(&prevStop.Color, &stop.Color, color.SRGB, color.LinearSRGB, n) {
+			for step := range color.Step(prevStop.Color, stop.Color, color.SRGB, color.LinearSRGB, n) {
 				out = append(out, gfx.Premul16(&step))
 			}
 		}

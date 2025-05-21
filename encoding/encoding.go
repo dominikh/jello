@@ -179,7 +179,7 @@ func (enc *Encoding) EncodeBrush(b gfx.Brush, alpha float32) {
 	switch b := b.(type) {
 	case gfx.SolidBrush:
 		color := b.Color
-		color.Alpha *= float64(alpha)
+		color.Values[3] *= float64(alpha)
 		enc.EncodeColor(newDrawColor(&color))
 	case gfx.GradientBrush:
 		switch g := b.Gradient.(type) {
@@ -272,7 +272,7 @@ func (enc *Encoding) EncodeLinearGradient(
 		enc.EncodeColor(drawColor{})
 	case 1:
 		c := colorStops[0].Color
-		c.Alpha *= float64(alpha)
+		c.Values[3] *= float64(alpha)
 		enc.EncodeColor(newDrawColor(&c))
 	default:
 		enc.addRamp(colorStops, alpha, extend)
@@ -299,7 +299,7 @@ func (enc *Encoding) EncodeRadialGradient(
 		enc.EncodeColor(drawColor{})
 	case 1:
 		c := colorStops[0].Color
-		c.Alpha *= float64(alpha)
+		c.Values[3] *= float64(alpha)
 		enc.EncodeColor(newDrawColor(&c))
 	default:
 		enc.addRamp(colorStops, alpha, extend)
@@ -324,7 +324,7 @@ func (enc *Encoding) EncodeSweepGradient(
 		enc.EncodeColor(drawColor{})
 	case 1:
 		c := colorStops[0].Color
-		c.Alpha *= float64(alpha)
+		c.Values[3] *= float64(alpha)
 		enc.EncodeColor(newDrawColor(&c))
 	default:
 		enc.addRamp(colorStops, alpha, extend)
